@@ -11,7 +11,7 @@ shinyApp(ui, server)
 
 # to do
 
-# forcast better model/vars... do we wannta try rf? etc
+# forcast better model/vars (exp in the rev and vis versa)... do we wannta try rf? etc
 # missing tile on toronto downtown.. data not the app fix
 # methodology/faq
 

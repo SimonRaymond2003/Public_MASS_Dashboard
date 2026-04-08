@@ -14,23 +14,23 @@ library(leaflet)
 # 1. LOAD DATA
 # ══════════════════════════════════════════════════════════════════════════════
 
-org_data <- read_excel("data/SIMON - 2025-10-24-MASS-Culture-Data-Summary-Real_Dollars.xlsx")
+org_data <- read_excel("non-updating_data/SIMON - 2025-10-24-MASS-Culture-Data-Summary-Real_Dollars.xlsx")
 org_data$`Revenue Range` <- NULL
 org_data$`Top Compensation Category` <- NULL
 org_data$`Compensation Category Counts` <- NULL
 
-mult_dt <- fread("data/provincial_multipliers_with_csa_splits.csv.gz")
-mapping_v2 <- fread("data/discipline_industry_mapping_v4.csv")
-pop_raw  <- fread("data/1710000501_databaseLoadingData.csv")
-prov_sf <- st_read("data/canada_provinces.geojson", quiet = TRUE)
+mult_dt <- fread("updating_data/provincial_multipliers_with_csa_splits.csv.gz")
+mapping_v2 <- fread("non-updating_data/discipline_industry_mapping_v4.csv")
+pop_raw  <- fread("updating_data/1710000501_databaseLoadingData.csv")
+prov_sf <- st_read("non-updating_data/canada_provinces.geojson", quiet = TRUE)
 
-lm_exp_final   <- readRDS("data/forecast/lm_exp_final.rds")
-lm_rev_final   <- readRDS("data/forecast/lm_rev_final.rds")
-exp_metrics_df <- readRDS("data/forecast/exp_metrics.rds")
-rev_metrics_df <- readRDS("data/forecast/rev_metrics.rds")
-forecast_levels <- readRDS("data/forecast/factor_levels.rds")
+lm_exp_final   <- readRDS("updating_data/predictions/lm_exp_final.rds")
+lm_rev_final   <- readRDS("updating_data/predictions/lm_rev_final.rds")
+exp_metrics_df <- readRDS("updating_data/predictions/exp_metrics.rds")
+rev_metrics_df <- readRDS("updating_data/predictions/rev_metrics.rds")
+forecast_levels <- readRDS("updating_data/predictions/factor_levels.rds")
 N_BOOT <- nrow(exp_metrics_df)
-addResourcePath("forecast", "data/forecast")
+addResourcePath("forecast", "updating_data/predictions")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. PREP MULTIPLIERS
@@ -251,7 +251,7 @@ mult_toggle_ui <- function(id, label_single = "Primary Multiplier", label_mix = 
 # 9. FSA CITY DATA
 # ══════════════════════════════════════════════════════════════════════════════
 
-fsa_city_sf <- readRDS("data/fsa_city_sf.rds")
+fsa_city_sf <- readRDS("non-updating_data/fsa_city_sf.rds")
 fsa_city_sf <- st_transform(fsa_city_sf, 4326)
 
 CITY_COORDS <- list(
@@ -276,7 +276,7 @@ CITY_COORDS <- list(
 # 10. CITY LABOUR FORCE SHARES (for municipal impact splitting)
 # ══════════════════════════════════════════════════════════════════════════════
 
-city_ovr_shares <- fread("data/city_overall_shares.csv")
+city_ovr_shares <- fread("updating_data/city_overall_shares.csv")
 
 app_city_to_cma <- c(
   "Toronto"                          = "Toronto, Ontario",

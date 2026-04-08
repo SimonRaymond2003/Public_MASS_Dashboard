@@ -139,90 +139,26 @@ cat("Full IOIC mapping rows:", nrow(subdomain_ioic), "\n")
 cat("Unique constituent IOIC codes:", length(unique(subdomain_ioic$ioic_code)), "\n")
 
 # =============================================================================
-# STEP 1: Validate SUT direct vs StatCan published (national + provincial)
+# STEP 1: Load multiplier tables & build SUT output weights
 # =============================================================================
-
-dat <- read_csv("SUT_C2021_D.csv", show_col_types = FALSE)
-extract_code <- function(x) str_extract(x, "\\[([A-Z0-9_]+)\\]", group = 1)
-is_producing <- function(x) grepl("\\[BS|\\[NP|\\[GS", x)
-va_codes <- c("GVA","PRM100000","PRM200000","PRM300000","PRM400000",
-              "PRM500000","PRM600000","PRM700000","PRM800000")
-
-sut_output <- dat %>%
-  filter(`Supply and use` == "Supply", Valuation == "Basic price",
-         is_producing(Industry), extract_code(Product) != "TOTAL") %>%
-  group_by(GEO, Industry) %>%
-  summarise(x = sum(VALUE, na.rm = TRUE), .groups = "drop") %>%
-  filter(x > 0)
-
-sut_gva <- dat %>%
-  filter(`Supply and use` == "Use", Valuation == "Basic price",
-         is_producing(Industry), extract_code(Product) == "GVA") %>%
-  group_by(GEO, Industry) %>%
-  summarise(gva = sum(VALUE, na.rm = TRUE), .groups = "drop")
-
-sut_direct <- sut_output %>%
-  left_join(sut_gva, by = c("GEO", "Industry")) %>%
-  mutate(code = extract_code(Industry), our_direct = gva / x) %>%
-  select(geo = GEO, code, our_direct)
-
-# --- SUT output by industry (for weighting indirect within sub-domains) ---
-sut_industry_output <- sut_output %>%
-  mutate(code = extract_code(Industry)) %>%
-  select(geo = GEO, code, output = x)
-
-cat("\n=== SUT industry output rows:", nrow(sut_industry_output), "===\n")
 
 # National multipliers
 mult <- get_cansim("36-10-0594-01")
 
-sc_nat_direct <- mult %>%
-  filter(REF_DATE == 2021,
-         Variable == "Gross domestic product (GDP) at basic prices",
-         `Multiplier type` == "Direct multiplier") %>%
-  mutate(code = str_extract(`Classification Code for Industry`, "[A-Z0-9_]+")) %>%
-  select(code, sc_direct = VALUE)
-
-nat_comparison <- sut_direct %>%
-  filter(geo == "Canada") %>%
-  inner_join(sc_nat_direct, by = "code") %>%
-  mutate(diff = round(our_direct - sc_direct, 4))
-
-cat("\n=== NATIONAL GDP DIRECT VALIDATION (2021) ===\n")
-cat("N:", nrow(nat_comparison), "| Mean abs diff:", round(mean(abs(nat_comparison$diff)), 4),
-    "| Corr:", round(cor(nat_comparison$our_direct, nat_comparison$sc_direct), 6), "\n")
-
 # Provincial multipliers
 prov_mult <- get_cansim("36-10-0595-01")
 
-sc_prov_direct <- prov_mult %>%
+# SUT output weights: use national GDP direct multipliers as a proxy for
+# industry output weights when weighting indirect effects across sub-domains
+extract_code <- function(x) str_extract(x, "\\[([A-Z0-9_]+)\\]", group = 1)
+
+sut_industry_output <- mult %>%
   filter(REF_DATE == 2021,
          Variable == "Gross domestic product (GDP) at basic prices",
-         `Multiplier type` == "Direct multiplier",
-         `Geographical coverage` == "Within province") %>%
-  mutate(code = str_extract(`Classification Code for Industry`, "[A-Z0-9_]+"),
-         geo = as.character(GEO)) %>%
-  select(geo, code, sc_direct = VALUE)
-
-prov_comparison <- sut_direct %>%
-  inner_join(sc_prov_direct, by = c("geo", "code")) %>%
-  mutate(diff = round(our_direct - sc_direct, 4))
-
-cat("=== PROVINCIAL GDP DIRECT VALIDATION (2021) ===\n")
-cat("N:", nrow(prov_comparison), "| Mean abs diff:", round(mean(abs(prov_comparison$diff)), 4),
-    "| Corr:", round(cor(prov_comparison$our_direct, prov_comparison$sc_direct), 6), "\n")
-
-# Jobs direct validation (national)
-sc_nat_jobs_direct <- mult %>%
-  filter(REF_DATE == 2021, Variable == "Jobs",
          `Multiplier type` == "Direct multiplier") %>%
-  mutate(code = str_extract(`Classification Code for Industry`, "[A-Z0-9_]+")) %>%
-  select(code, sc_jobs_direct = VALUE)
-
-cat("=== NATIONAL JOBS DIRECT — sample parent industries ===\n")
-sc_nat_jobs_direct %>%
-  filter(code %in% unique(domain_map$parent_code)) %>%
-  print(n = 20, width = Inf)
+  mutate(code = str_extract(`Classification Code for Industry`, "[A-Z0-9_]+"),
+         output = VALUE) %>%
+  select(geo = GEO, code, output)
 
 # =============================================================================
 # STEP 2: Load all multiplier tables (GDP + Jobs)

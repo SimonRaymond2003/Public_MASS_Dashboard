@@ -3,10 +3,10 @@
 # source scripts from Update_Scripts/ folder
 
 
-source("updating_script/LF_data.R")
-source("updating_script/Predicitons.R")
-source("updating_script/Multipliers.R")
-source("updating_script/Population.R")
+source("updating_scripts/LF_data.R")
+source("updating_scripts/Predictions.R")
+source("updating_scripts/Multipliers.R")
+source("updating_scripts/Population.R")
 
 
 

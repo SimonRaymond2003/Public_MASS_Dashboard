@@ -185,6 +185,7 @@ summarize_metrics(rev_metrics, "REVENUE LM")
 
 # ── 8. SAVE EVERYTHING ──────────────────────────────────────────────────────
 
+dir.create("updating_data/predictions", recursive = TRUE, showWarnings = FALSE)
 saveRDS(lm_exp_final,  "updating_data/predictions/lm_exp_final.rds")
 saveRDS(lm_rev_final,  "updating_data/predictions/lm_rev_final.rds")
 saveRDS(exp_metrics,    "updating_data/predictions/exp_metrics.rds")
