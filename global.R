@@ -1,0 +1,344 @@
+library(shiny)
+library(bslib)
+library(readxl)
+library(data.table)
+library(dplyr)
+library(tidyr)
+library(plotly)
+library(scales)
+library(stringr)
+library(sf)
+library(leaflet)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 1. LOAD DATA
+# ══════════════════════════════════════════════════════════════════════════════
+
+org_data <- read_excel("data/SIMON - 2025-10-24-MASS-Culture-Data-Summary-Real_Dollars.xlsx")
+org_data$`Revenue Range` <- NULL
+org_data$`Top Compensation Category` <- NULL
+org_data$`Compensation Category Counts` <- NULL
+
+mult_dt <- fread("data/provincial_multipliers_with_csa_splits.csv.gz")
+mapping_v2 <- fread("data/discipline_industry_mapping_v4.csv")
+pop_raw  <- fread("data/1710000501_databaseLoadingData.csv")
+prov_sf <- st_read("data/canada_provinces.geojson", quiet = TRUE)
+
+lm_exp_final   <- readRDS("data/forecast/lm_exp_final.rds")
+lm_rev_final   <- readRDS("data/forecast/lm_rev_final.rds")
+exp_metrics_df <- readRDS("data/forecast/exp_metrics.rds")
+rev_metrics_df <- readRDS("data/forecast/rev_metrics.rds")
+forecast_levels <- readRDS("data/forecast/factor_levels.rds")
+N_BOOT <- nrow(exp_metrics_df)
+addResourcePath("forecast", "data/forecast")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 2. PREP MULTIPLIERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+prov_lookup <- c(
+  "Newfoundland and Labrador"="NL","Prince Edward Island"="PE",
+  "Nova Scotia"="NS","New Brunswick"="NB","Quebec"="QC","Ontario"="ON",
+  "Manitoba"="MB","Saskatchewan"="SK","Alberta"="AB","British Columbia"="BC",
+  "Yukon"="YT","Northwest Territories"="NT","Nunavut"="NU")
+
+mult_dt[, Province := prov_lookup[geo]]
+mult_dt <- mult_dt[!is.na(Province)]
+
+all_prov <- mult_dt[coverage == "All provinces",
+                    .(year, Province, industry_code,
+                      gdp_direct, gdp_indirect, gdp_induced, gdp_total,
+                      jobs_direct, jobs_indirect, jobs_induced, jobs_total,
+                      source, domain_label)]
+
+wp <- mult_dt[coverage == "Within province",
+              .(year, Province, industry_code,
+                gdp_wp_direct = gdp_direct, gdp_wp_indirect = gdp_indirect,
+                gdp_wp_induced = gdp_induced, gdp_wp_total = gdp_total,
+                jobs_wp_direct = jobs_direct, jobs_wp_indirect = jobs_indirect,
+                jobs_wp_induced = jobs_induced, jobs_wp_total = jobs_total)]
+
+mult_combined <- merge(all_prov, wp,
+                       by = c("year","Province","industry_code"), all.x = TRUE)
+
+MULT_COLS <- c("gdp_direct","gdp_indirect","gdp_induced","gdp_total",
+               "gdp_wp_direct","gdp_wp_indirect","gdp_wp_induced","gdp_wp_total",
+               "jobs_direct","jobs_indirect","jobs_induced","jobs_total",
+               "jobs_wp_direct","jobs_wp_indirect","jobs_wp_induced","jobs_wp_total")
+
+for (col in MULT_COLS) set(mult_combined, which(is.na(mult_combined[[col]])), col, 0)
+mult_combined <- as.data.frame(mult_combined)
+
+pop_data <- as.data.frame(pop_raw)
+pop_data$Province <- prov_lookup[pop_data$GEO]
+pop_data <- pop_data[!is.na(pop_data$Province),]
+pop_data <- pop_data[, c("REF_DATE","Province","VALUE")]
+names(pop_data) <- c("Year","Province","population")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 3. PARSE v2 MAPPING
+# ══════════════════════════════════════════════════════════════════════════════
+
+mapping_v2 <- as.data.frame(mapping_v2)
+CODE_COLS <- names(mapping_v2)[4:ncol(mapping_v2)]
+
+combo_map_v2 <- mapping_v2 %>%
+  rename(Category = 1, Discipline = 2) %>%
+  select(Category, Discipline, all_of(CODE_COLS)) %>%
+  mutate(across(all_of(CODE_COLS), ~na_if(trimws(as.character(.x)), ""))) %>%
+  rowwise() %>%
+  mutate(
+    ind_primary = { vals <- c_across(all_of(CODE_COLS)); first(vals[!is.na(vals)]) %||% "BS71A000" },
+    ind_all = list({ vals <- unique(na.omit(c_across(all_of(CODE_COLS)))); if(length(vals)==0) "BS71A000" else vals })
+  ) %>% ungroup() %>%
+  select(Category, Discipline, ind_primary, ind_all)
+
+# Full combo list from v4 — ALL possible Category x Discipline pairs (including those with 0 orgs in data)
+VALID_COMBOS_FULL <- combo_map_v2 %>% distinct(Category, Discipline)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 4. JOIN TO ORG DATA
+# ══════════════════════════════════════════════════════════════════════════════
+
+org_data <- org_data %>%
+  left_join(combo_map_v2, by = c("Category","Discipline")) %>%
+  mutate(ind_primary = replace_na(ind_primary, "BS71A000"),
+         ind_all = ifelse(is.na(ind_all), list("BS71A000"), ind_all))
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 5. MULTIPLIER LOOKUP HELPERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+get_mult_row <- function(prov, yr, ind, mdf = mult_combined) {
+  m <- mdf[mdf$Province == prov & mdf$year == yr & mdf$industry_code == ind, ]
+  if (nrow(m) >= 1) return(m[1, ])
+  m <- mdf[mdf$Province == prov & mdf$industry_code == ind & mdf$year <= yr, ]
+  if (nrow(m) >= 1) return(m[which.max(m$year), ])
+  m <- mdf[mdf$Province == prov & mdf$industry_code == ind, ]
+  if (nrow(m) >= 1) return(m[which.max(m$year), ])
+  m <- mdf[mdf$industry_code == ind, ]
+  if (nrow(m) >= 1) {
+    r <- as.data.frame(lapply(m[, MULT_COLS, drop=FALSE], mean, na.rm=TRUE))
+    r$Province <- prov; r$year <- yr; r$industry_code <- ind; return(r)
+  }
+  m <- mdf[mdf$industry_code == "BS71A000", ]
+  r <- as.data.frame(lapply(m[, MULT_COLS, drop=FALSE], mean, na.rm=TRUE))
+  r$Province <- prov; r$year <- yr; r$industry_code <- "BS71A000"; r
+}
+
+get_mult_row_mixture <- function(prov, yr, ind_vec, mdf = mult_combined) {
+  rows <- lapply(ind_vec, function(ind) get_mult_row(prov, yr, ind, mdf))
+  df <- do.call(rbind, rows)
+  r <- as.data.frame(lapply(df[, MULT_COLS, drop=FALSE], mean, na.rm=TRUE))
+  r$Province <- prov; r$year <- yr; r$industry_code <- paste(ind_vec, collapse="+"); r
+}
+
+get_mult_row_weighted <- function(prov, yr, ind_vec, weights, mdf = mult_combined) {
+  stopifnot(length(ind_vec) == length(weights))
+  weights <- weights / sum(weights)
+  rows <- lapply(ind_vec, function(ind) get_mult_row(prov, yr, ind, mdf))
+  df <- do.call(rbind, rows)
+  r <- as.data.frame(lapply(df[, MULT_COLS, drop = FALSE], function(col) sum(col * weights, na.rm = TRUE)))
+  r$Province <- prov; r$year <- yr; r$industry_code <- paste(ind_vec, collapse = "+"); r
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 6. PRE-COMPUTE MULTIPLIERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+combos_scalar <- org_data %>% distinct(Province, Year, ind_primary)
+ind_all_lookup <- org_data %>% select(ind_primary, ind_all) %>% group_by(ind_primary) %>% slice(1) %>% ungroup()
+combos <- combos_scalar %>% left_join(ind_all_lookup, by = "ind_primary")
+
+combos_single <- combos %>% rowwise() %>% mutate(m = list(get_mult_row(Province, Year, ind_primary))) %>% ungroup()
+for (col in MULT_COLS) combos_single[[col]] <- sapply(combos_single$m, function(x) if(col %in% names(x)) x[[col]][1] else 0)
+combos_single$m <- NULL
+
+combos_mixture <- combos %>% rowwise() %>% mutate(m = list(get_mult_row_mixture(Province, Year, ind_all))) %>% ungroup()
+for (col in MULT_COLS) combos_mixture[[col]] <- sapply(combos_mixture$m, function(x) if(col %in% names(x)) x[[col]][1] else 0)
+combos_mixture$m <- NULL
+
+attach_impacts <- function(org_df, combos_df, base_col = "Total Expenditures") {
+  lookup <- combos_df %>% select(-any_of("ind_all")) %>% distinct(Province, Year, ind_primary, .keep_all = TRUE)
+  org_df %>%
+    left_join(lookup, by = c("Province","Year","ind_primary")) %>%
+    mutate(base_amt = .data[[base_col]],
+           imp_gdp_direct = base_amt * gdp_direct, imp_gdp_indirect = base_amt * gdp_indirect,
+           imp_gdp_induced = base_amt * gdp_induced, imp_gdp_total = base_amt * gdp_total,
+           imp_gdp_wp_total = base_amt * gdp_wp_total,
+           base_millions = base_amt / 1e6,
+           imp_jobs_direct = base_millions * jobs_direct, imp_jobs_indirect = base_millions * jobs_indirect,
+           imp_jobs_induced = base_millions * jobs_induced, imp_jobs_total = base_millions * jobs_total,
+           imp_jobs_wp_total = base_millions * jobs_wp_total)
+}
+
+org_data_exp <- org_data %>% filter(!is.na(`Total Expenditures`), `Total Expenditures` > 0)
+org_data_rev <- org_data %>% filter(!is.na(`Total Revenue`), `Total Revenue` > 0)
+org_data_single_exp  <- attach_impacts(org_data_exp, combos_single, "Total Expenditures")
+org_data_mixture_exp <- attach_impacts(org_data_exp, combos_mixture, "Total Expenditures")
+org_data_single_rev  <- attach_impacts(org_data_rev, combos_single, "Total Revenue")
+org_data_mixture_rev <- attach_impacts(org_data_rev, combos_mixture, "Total Revenue")
+org_data_single  <- org_data_single_exp
+org_data_mixture <- org_data_mixture_exp
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 7. MAP PREP
+# ══════════════════════════════════════════════════════════════════════════════
+
+geo_names <- names(prov_sf)
+name_col  <- intersect(c("PRENAME","PRENAME_E","name","NAME","PREABBR"), geo_names)[1]
+if (is.na(name_col)) { message("GeoJSON columns: ", paste(geo_names, collapse=", ")); name_col <- geo_names[1] }
+prov_name_to_abbr <- c(
+  "Newfoundland and Labrador"="NL","Newfoundland  & Labrador"="NL","Newfoundland & Labrador"="NL",
+  "Prince Edward Island"="PE","Nova Scotia"="NS","New Brunswick"="NB",
+  "Quebec"="QC","Québec"="QC","Ontario"="ON","Manitoba"="MB",
+  "Saskatchewan"="SK","Alberta"="AB","British Columbia"="BC",
+  "Yukon"="YT","Yukon Territory"="YT","Northwest Territories"="NT","Nunavut"="NU",
+  "NL"="NL","PE"="PE","NS"="NS","NB"="NB","QC"="QC","ON"="ON","MB"="MB",
+  "SK"="SK","AB"="AB","BC"="BC","YT"="YT","NT"="NT","NU"="NU")
+prov_sf$prov_abbr <- prov_name_to_abbr[prov_sf[[name_col]]]
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 8. CONSTANTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+YEARS         <- sort(unique(org_data$Year))
+MAX_YEAR      <- max(YEARS)
+MAX_MULT_YEAR <- max(mult_combined$year, na.rm = TRUE)
+PROVINCES     <- sort(unique(org_data$Province))
+
+# For top filters / charts — only combos that actually exist in the data
+CATEGORIES  <- sort(unique(org_data$Category))
+DISCIPLINES <- sort(unique(org_data$Discipline))
+VALID_COMBOS <- org_data %>% distinct(Category, Discipline)
+
+# For calculator & forecaster — all combos from v4 mapping (even if 0 orgs in data)
+CALC_CATEGORIES  <- sort(unique(VALID_COMBOS_FULL$Category))
+CALC_DISCIPLINES <- sort(unique(VALID_COMBOS_FULL$Discipline))
+
+# Years capped at MAX_MULT_YEAR for all selectors
+YEARS_CAPPED <- YEARS[YEARS <= MAX_MULT_YEAR]
+DEFAULT_YEAR    <- as.character(min(MAX_YEAR, MAX_MULT_YEAR))
+MAX_YEAR_CAPPED <- min(MAX_YEAR, MAX_MULT_YEAR)
+
+NAVY <- "#1B1464"; PINK <- "#FF3EC9"; GREEN <- "#2D6A4F"
+CREAM <- "#FAF8F5"; WHITE <- "#FFFFFF"; GOLD <- "#D4A843"
+
+# Build custom code list dynamically from data:
+# CSA split codes first (codes only, no display name), then all StatCan published codes
+.split_codes   <- sort(unique(mult_combined$industry_code[grepl("_", mult_combined$industry_code)]))
+.statcan_codes <- sort(unique(mult_combined$industry_code[!grepl("_", mult_combined$industry_code)]))
+CUSTOM_IND_CODES <- setNames(
+  c(.split_codes, .statcan_codes),
+  c(.split_codes, .statcan_codes)
+)
+
+mult_toggle_ui <- function(id, label_single = "Primary Multiplier", label_mix = "Equal-Weight Mixture") {
+  div(style = "display:flex; align-items:center; gap:8px; margin-bottom:10px;",
+      tags$label(style = "font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#777;", "Multiplier Method:"),
+      tags$div(style = "display:flex; border-radius:20px; overflow:hidden; border:1px solid #ddd; font-size:0.75rem;",
+               tags$button(id = paste0(id,"_single"), class = "mult-btn active-mult-btn",
+                           style = sprintf("padding:5px 14px; border:none; cursor:pointer; font-weight:700; background:%s; color:%s; transition:all .2s;", NAVY, WHITE),
+                           onclick = sprintf("Shiny.setInputValue('%s','single'); this.style.background='%s'; this.style.color='%s'; document.getElementById('%s_mix').style.background='#fff'; document.getElementById('%s_mix').style.color='#555';", id, NAVY, WHITE, id, id),
+                           label_single),
+               tags$button(id = paste0(id,"_mix"), class = "mult-btn",
+                           style = "padding:5px 14px; border:none; cursor:pointer; font-weight:700; background:#fff; color:#555; transition:all .2s;",
+                           onclick = sprintf("Shiny.setInputValue('%s','mixture'); this.style.background='%s'; this.style.color='%s'; document.getElementById('%s_single').style.background='#fff'; document.getElementById('%s_single').style.color='#555';", id, PINK, WHITE, id, id),
+                           label_mix)))
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 9. FSA CITY DATA
+# ══════════════════════════════════════════════════════════════════════════════
+
+fsa_city_sf <- readRDS("data/fsa_city_sf.rds")
+fsa_city_sf <- st_transform(fsa_city_sf, 4326)
+
+CITY_COORDS <- list(
+  "Toronto"            = list(lng = -79.38, lat = 43.70, zoom = 11),
+  "Montreal"           = list(lng = -73.57, lat = 45.50, zoom = 11),
+  "Vancouver"          = list(lng = -123.12, lat = 49.25, zoom = 11),
+  "Ottawa-Gatineau"    = list(lng = -75.70, lat = 45.42, zoom = 11),
+  "Calgary"            = list(lng = -114.07, lat = 51.05, zoom = 11),
+  "Edmonton"           = list(lng = -113.49, lat = 53.55, zoom = 11),
+  "Winnipeg"           = list(lng = -97.14, lat = 49.90, zoom = 11),
+  "Quebec City"        = list(lng = -71.21, lat = 46.81, zoom = 11),
+  "Hamilton"           = list(lng = -79.87, lat = 43.25, zoom = 11),
+  "Kitchener-Waterloo" = list(lng = -80.49, lat = 43.45, zoom = 11),
+  "London"             = list(lng = -81.25, lat = 42.98, zoom = 11),
+  "Halifax"            = list(lng = -63.57, lat = 44.65, zoom = 11),
+  "Victoria"           = list(lng = -123.37, lat = 48.43, zoom = 11),
+  "Saskatoon"          = list(lng = -106.67, lat = 52.13, zoom = 12),
+  "Regina"             = list(lng = -104.62, lat = 50.45, zoom = 12)
+)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 10. CITY LABOUR FORCE SHARES (for municipal impact splitting)
+# ══════════════════════════════════════════════════════════════════════════════
+
+city_ovr_shares <- fread("data/city_overall_shares.csv")
+
+app_city_to_cma <- c(
+  "Toronto"                          = "Toronto, Ontario",
+  "Montréal"                         = "Montréal, Quebec",
+  "Vancouver"                        = "Vancouver, British Columbia",
+  "Ottawa - Gatineau"                = "Ottawa-Gatineau, Ontario/Quebec",
+  "Calgary"                          = "Calgary, Alberta",
+  "Edmonton"                         = "Edmonton, Alberta",
+  "Winnipeg"                         = "Winnipeg, Manitoba",
+  "Québec"                           = "Québec, Quebec",
+  "Hamilton"                         = "Hamilton, Ontario",
+  "Kitchener - Cambridge - Waterloo" = "Kitchener-Cambridge-Waterloo, Ontario",
+  "London"                           = "London, Ontario",
+  "Halifax"                          = "Halifax, Nova Scotia",
+  "Victoria"                         = "Victoria, British Columbia",
+  "Saskatoon"                        = "Saskatoon, Saskatchewan",
+  "Regina"                           = "Regina, Saskatchewan"
+)
+
+get_city_share <- function(city_name, ind_code = NULL) {
+  cma_name <- app_city_to_cma[city_name]
+  if (is.na(cma_name)) return(0)
+  share <- city_ovr_shares[cma == cma_name, overall_share]
+  if (length(share) > 0 && !is.na(share[1])) return(share[1])
+  return(0)
+}
+
+# ── TERM DEFINITIONS (for hover tooltips) ────────────────────────────────────
+TERMS <- list(
+  "GDP" = "Gross Domestic Product — The total monetary value of all final goods and services.",
+  "Direct GDP" = "GDP generated by the organization itself such as wages paid, goods and services purchased directly in its operations.",
+  "Indirect GDP" = "GDP generated by the organization's suppliers and their suppliers, as spending ripples up the supply chain.",
+  "Induced GDP" = "GDP generated when employees (of the organization and its suppliers) spend their wages on goods and services.",
+  "Total GDP" = "Direct + Indirect + Induced GDP — the full economic footprint of the organization in the economy.",
+  "Jobs" = "Headcount of jobs supported across all impact layers (direct, indirect, induced), regardless of full/part-time status.",
+  "Direct Impact" = "Activity generated directly by the organization: wages, salaries, and operational spending.",
+  "Indirect Impact" = "Activity generated in supplier industries as a result of the organization's purchasing.",
+  "Induced Impact" = "Activity generated when employees spend their wages on other goods and services.",
+  "Total Impact" = "Direct + Indirect + Induced economic impacts",
+  "Multiplier" = "Ratio from the Input-Output model — multiply an organization's expenditures or revenues by this to estimate GDP or jobs generated.",
+  "Within-Province" = "Impact retained inside the organization's home province, excluding economic activity that leaks to other provinces.",
+  "Leakage" = "The share of impact that flows out to other provinces via out-of-province supply chains. Indirect and induced impacts alone drive leakage.",
+  "I-O Model" = "Input-Output model, first developed by economist Wassily Leontief tracks how every industry buys from and sells to every other industry, then uses those links to estimate how much GDP and how many jobs a dollar of spending creates across the whole economy.",  
+  "FSA" = "Forward Sortation Area — the first 3 characters of a Canadian postal code, used to assign organizations to geographic areas.",
+  "MAE" = "Mean Absolute Error — average gap between predicted and actual values. Lower is better.",
+  "Per Capita" = "Divided by population.",
+  "Expenditures" = "Total spending by an organization, used as a base amount for impact calculations.",
+  "Revenue" = "Total income received by an organization, used as a base for impact calculations.",
+  "Prediction" = "Predicted next-year value based on historical financials and organization characteristics. Models are trained on non-profit arts and culture data only.",
+  "Employment Share" = "Proportion of a province's labour force located within the selected city.",
+  "Primary" = "Uses a single industry multiplier based on the organization's main activity code.",
+  "Mixture" = "Weights multiple industry multipliers equally for organizations that span several sectors.",
+  "Industry Code" = "StatCan I-O classification (e.g., BS71A000) identifying the industry whose multipliers apply.",
+  "City Retention" = "Percentage of total GDP impact estimated to stay within the selected city's boundaries."
+)
+
+# Helper function to create a hoverable term with tooltip
+term <- function(text, def_key = NULL) {
+  key <- if (is.null(def_key)) text else def_key
+  definition <- TERMS[[key]]
+  if (is.null(definition)) {
+    return(tags$span(text))
+  }
+  tags$span(class = "term-tip", `data-def` = definition, text)
+}
