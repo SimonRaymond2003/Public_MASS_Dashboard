@@ -14,7 +14,7 @@ library(leaflet)
 # 1. LOAD DATA
 # ══════════════════════════════════════════════════════════════════════════════
 
-org_data <- read_excel("non-updating_data/SIMON - 2025-10-24-MASS-Culture-Data-Summary-Real_Dollars.xlsx")
+org_data <- read_excel("MASS_data/SIMON - 2025-10-24-MASS-Culture-Data-Summary-Real_Dollars.xlsx")
 org_data$`Revenue Range` <- NULL
 org_data$`Top Compensation Category` <- NULL
 org_data$`Compensation Category Counts` <- NULL
