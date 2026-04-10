@@ -1,4 +1,4 @@
-# run this script once every x amount of time to update population data, multipliers etc (simon include full list of what it updates)
+# run this script once every x amount of time to update population data, lf data, multipliers etc 
 
 # source scripts from Update_Scripts/ folder
 

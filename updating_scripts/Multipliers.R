@@ -10,7 +10,7 @@ library(data.table)
 # =============================================================================
 
 domain_map <- tribble(
-  ~csa_domain,                                             ~parent_code,
+  ~csa_domain,                                             ~indirect_parent_code,
   "Culture heritage",                                      "BS71A000",
   "Natural heritage",                                      "BS71A000",
   "Performing arts",                                       "BS71A000",
@@ -134,7 +134,7 @@ subdomain_ioic <- tribble(
 )
 
 cat("=== DOMAIN MAPPING ===\n")
-cat("Sub-domains:", nrow(domain_map), "| Parent industries:", length(unique(domain_map$parent_code)), "\n")
+cat("Sub-domains:", nrow(domain_map), "| Indirect parent industries:", length(unique(domain_map$indirect_parent_code)), "\n")
 cat("Full IOIC mapping rows:", nrow(subdomain_ioic), "\n")
 cat("Unique constituent IOIC codes:", length(unique(subdomain_ioic$ioic_code)), "\n")
 
@@ -385,14 +385,19 @@ cat("National:", nrow(csa_nat_combined), "| Provincial:", nrow(ptci_combined), "
 #     indirect (the induced effect reflects spending from indirect workers/GDP,
 #     so if indirect differs, so does the induced component driven by it)
 #
-# Weighted-average constraint still holds for direct (via scale factor).
-# Indirect is now heterogeneous across sub-domains within a parent.
+# v3: direct multiplier uses a SINGLE shared anchor (BS71A000) for all
+#     sub-domains. The CSA GDP/output and Jobs/output ratios scale relative to
+#     that one anchor, so directs are fully driven by CSA data rather than each
+#     parent's own direct multiplier.
+# Indirect/induced anchoring remains per-(indirect-)parent as before.
 # =============================================================================
 
 split_group <- function(csa_df, parent_gdp, parent_jobs,
-                        wt_indirect_lookup) {
-  # csa_df has: Domain, output, gdp_output_ratio, jobs_output_ratio, parent_code
+                        wt_indirect_lookup,
+                        anchor_direct_gdp, anchor_direct_jobs) {
+  # csa_df has: Domain, output, gdp_output_ratio, jobs_output_ratio
   # wt_indirect_lookup has: csa_domain, wt_indirect_gdp, wt_indirect_jobs
+  # anchor_direct_gdp / anchor_direct_jobs: BS71A000 direct multipliers (shared)
   csa_df <- csa_df %>% filter(!is.na(gdp_output_ratio), output > 0)
   if (nrow(csa_df) == 0) return(NULL)
   
@@ -407,7 +412,7 @@ split_group <- function(csa_df, parent_gdp, parent_jobs,
   # --- GDP splits ---
   raw_gdp_avg <- sum(csa_df$output_wt * csa_df$gdp_output_ratio)
   if (raw_gdp_avg == 0 || is.na(raw_gdp_avg)) return(NULL)
-  sf_gdp <- parent_gdp$direct / raw_gdp_avg
+  sf_gdp <- anchor_direct_gdp / raw_gdp_avg   # single shared anchor: BS71A000
   
   # Fallback: if weighted indirect is NA for a sub-domain, use parent indirect
   csa_df <- csa_df %>%
@@ -459,7 +464,7 @@ split_group <- function(csa_df, parent_gdp, parent_jobs,
     raw_jobs_avg <- sum(csa_df$output_wt * csa_df$jobs_output_ratio)
     
     if (raw_jobs_avg > 0) {
-      sf_jobs <- parent_jobs$direct / raw_jobs_avg
+      sf_jobs <- anchor_direct_jobs / raw_jobs_avg   # single shared anchor: BS71A000
       
       # Weighted indirect for jobs
       csa_df <- csa_df %>%
@@ -520,7 +525,7 @@ split_group <- function(csa_df, parent_gdp, parent_jobs,
 # STEP 4: NATIONAL SPLITS (GDP + Jobs) — with weighted indirect
 # =============================================================================
 
-parent_codes <- unique(domain_map$parent_code)
+parent_codes <- unique(domain_map$indirect_parent_code)
 nat_years <- intersect(unique(nat_gdp$year), unique(csa_nat_combined$year))
 cat("\n=== NATIONAL: overlapping years:", sort(nat_years), "===\n")
 
@@ -531,16 +536,22 @@ nat_splits <- lapply(nat_years, function(yr) {
     nat_indirect_gdp, nat_indirect_jobs,
     geo_val = NULL, coverage_val = NULL, year_val = yr
   )
-  
+
+  # Single shared direct anchor: BS71A000
+  anchor_gdp  <- nat_gdp  %>% filter(year == yr, code == "BS71A000")
+  anchor_jobs <- nat_jobs %>% filter(year == yr, code == "BS71A000")
+  anc_gdp_d  <- if (nrow(anchor_gdp)  > 0) anchor_gdp$direct[1]  else NA_real_
+  anc_jobs_d <- if (nrow(anchor_jobs) > 0) anchor_jobs$direct[1] else NA_real_
+
   lapply(parent_codes, function(pc) {
     pg <- nat_gdp  %>% filter(year == yr, code == pc)
     pj <- nat_jobs %>% filter(year == yr, code == pc)
     if (nrow(pg) == 0) return(NULL)
-    
-    domains_in_group <- domain_map %>% filter(parent_code == pc) %>% pull(csa_domain)
+
+    domains_in_group <- domain_map %>% filter(indirect_parent_code == pc) %>% pull(csa_domain)
     csa_sub <- csa_nat_combined %>% filter(year == yr, Domain %in% domains_in_group)
-    
-    result <- split_group(csa_sub, pg, pj, wt_ind)
+
+    result <- split_group(csa_sub, pg, pj, wt_ind, anc_gdp_d, anc_jobs_d)
     if (is.null(result)) return(NULL)
     result %>% mutate(year = yr, geo = "Canada", coverage = "National")
   }) %>% bind_rows()
@@ -570,16 +581,22 @@ prov_splits <- lapply(prov_years, function(yr) {
         prov_indirect_gdp, prov_indirect_jobs,
         geo_val = pv, coverage_val = cov, year_val = yr
       )
-      
+
+      # Single shared direct anchor: BS71A000
+      anchor_gdp  <- prov_gdp  %>% filter(year == yr, geo == pv, coverage == cov, code == "BS71A000")
+      anchor_jobs <- prov_jobs %>% filter(year == yr, geo == pv, coverage == cov, code == "BS71A000")
+      anc_gdp_d  <- if (nrow(anchor_gdp)  > 0) anchor_gdp$direct[1]  else NA_real_
+      anc_jobs_d <- if (nrow(anchor_jobs) > 0) anchor_jobs$direct[1] else NA_real_
+
       lapply(parent_codes, function(pc) {
         pg <- prov_gdp  %>% filter(year == yr, geo == pv, coverage == cov, code == pc)
         pj <- prov_jobs %>% filter(year == yr, geo == pv, coverage == cov, code == pc)
         if (nrow(pg) == 0) return(NULL)
-        
-        domains_in_group <- domain_map %>% filter(parent_code == pc) %>% pull(csa_domain)
+
+        domains_in_group <- domain_map %>% filter(indirect_parent_code == pc) %>% pull(csa_domain)
         csa_sub <- ptci_combined %>% filter(year == yr, geo == pv, Domain %in% domains_in_group)
-        
-        result <- split_group(csa_sub, pg, pj, wt_ind)
+
+        result <- split_group(csa_sub, pg, pj, wt_ind, anc_gdp_d, anc_jobs_d)
         if (is.null(result)) return(NULL)
         result %>% mutate(year = yr, geo = pv, coverage = cov)
       }) %>% bind_rows()
@@ -594,10 +611,10 @@ cat("Provincial split rows:", nrow(prov_splits), "\n")
 # =============================================================================
 
 all_splits <- bind_rows(nat_splits, prov_splits) %>%
-  select(year, geo, coverage, Domain, parent_code, output_wt,
+  select(year, geo, coverage, Domain, indirect_parent_code, output_wt,
          gdp_direct, gdp_indirect, gdp_induced, gdp_simple, gdp_total,
          jobs_direct, jobs_indirect, jobs_induced, jobs_simple, jobs_total) %>%
-  arrange(year, geo, coverage, parent_code, Domain)
+  arrange(year, geo, coverage, indirect_parent_code, Domain)
 
 cat("\n=== ALL SPLITS:", nrow(all_splits), "rows ===\n")
 
@@ -608,7 +625,7 @@ cat("\n=== ALL SPLITS:", nrow(all_splits), "rows ===\n")
 cat("\n=== WEIGHTED AVERAGE CHECK — NATIONAL 2021 ===\n")
 check_nat <- all_splits %>%
   filter(year == "2021", geo == "Canada") %>%
-  group_by(parent_code) %>%
+  group_by(indirect_parent_code) %>%
   summarise(
     n = n(),
     wt_gdp_d  = round(sum(output_wt * gdp_direct, na.rm = TRUE), 4),
@@ -619,18 +636,18 @@ check_nat <- all_splits %>%
     .groups = "drop"
   ) %>%
   left_join(nat_gdp %>% filter(year == "2021") %>%
-              select(parent_code = code, p_gdp_d = direct,
-                     p_gdp_i = indirect, p_gdp_t = total), by = "parent_code") %>%
+              select(indirect_parent_code = code, p_gdp_d = direct,
+                     p_gdp_i = indirect, p_gdp_t = total), by = "indirect_parent_code") %>%
   left_join(nat_jobs %>% filter(year == "2021") %>%
-              select(parent_code = code, p_jobs_d = direct,
-                     p_jobs_i = indirect), by = "parent_code") %>%
+              select(indirect_parent_code = code, p_jobs_d = direct,
+                     p_jobs_i = indirect), by = "indirect_parent_code") %>%
   mutate(d_gdp_d = round(wt_gdp_d - p_gdp_d, 4),
          d_gdp_i = round(wt_gdp_i - p_gdp_i, 4),
          d_gdp_t = round(wt_gdp_t - p_gdp_t, 4),
          d_jobs_d = round(wt_jobs_d - p_jobs_d, 3),
          d_jobs_i = round(wt_jobs_i - p_jobs_i, 3))
 
-print(check_nat %>% select(parent_code, n,
+print(check_nat %>% select(indirect_parent_code, n,
                            wt_gdp_d, p_gdp_d, d_gdp_d,
                            wt_gdp_i, p_gdp_i, d_gdp_i,
                            wt_gdp_t, p_gdp_t, d_gdp_t,
@@ -642,7 +659,7 @@ print(check_nat %>% select(parent_code, n,
 cat("\n=== WEIGHTED AVERAGE CHECK — ONTARIO 2021 WITHIN PROVINCE ===\n")
 check_on <- all_splits %>%
   filter(year == "2021", geo == "Ontario", coverage == "Within province") %>%
-  group_by(parent_code) %>%
+  group_by(indirect_parent_code) %>%
   summarise(
     wt_gdp_d  = round(sum(output_wt * gdp_direct, na.rm = TRUE), 4),
     wt_gdp_i  = round(sum(output_wt * gdp_indirect, na.rm = TRUE), 4),
@@ -652,18 +669,18 @@ check_on <- all_splits %>%
   ) %>%
   left_join(prov_gdp %>% filter(year == "2021", geo == "Ontario",
                                 coverage == "Within province") %>%
-              select(parent_code = code, p_gdp_d = direct,
-                     p_gdp_i = indirect), by = "parent_code") %>%
+              select(indirect_parent_code = code, p_gdp_d = direct,
+                     p_gdp_i = indirect), by = "indirect_parent_code") %>%
   left_join(prov_jobs %>% filter(year == "2021", geo == "Ontario",
                                  coverage == "Within province") %>%
-              select(parent_code = code, p_jobs_d = direct,
-                     p_jobs_i = indirect), by = "parent_code") %>%
+              select(indirect_parent_code = code, p_jobs_d = direct,
+                     p_jobs_i = indirect), by = "indirect_parent_code") %>%
   mutate(d_gdp_d = round(wt_gdp_d - p_gdp_d, 4),
          d_gdp_i = round(wt_gdp_i - p_gdp_i, 4),
          d_jobs_d = round(wt_jobs_d - p_jobs_d, 3),
          d_jobs_i = round(wt_jobs_i - p_jobs_i, 3))
 
-print(check_on %>% select(parent_code,
+print(check_on %>% select(indirect_parent_code,
                           wt_gdp_d, p_gdp_d, d_gdp_d,
                           wt_gdp_i, p_gdp_i, d_gdp_i,
                           wt_jobs_d, p_jobs_d, d_jobs_d,
@@ -703,8 +720,8 @@ prov_published <- pub_gdp %>%
 # CSA split rows (provincial only)
 prov_new <- all_splits %>%
   filter(geo != "Canada") %>%
-  mutate(industry_code = paste0(parent_code, "_", gsub("[^A-Za-z]", "", 
-                                                       substr(gsub(" ", "", Domain), 1, 8))),
+  mutate(industry_code = paste0("csa_", gsub("[^A-Za-z]", "",
+                                             substr(gsub(" ", "", Domain), 1, 10))),
          domain_label = Domain,
          source = "CSA split") %>%
   select(year, geo, coverage, industry_code, domain_label,
@@ -718,7 +735,7 @@ combined <- bind_rows(prov_published, prov_new) %>%
 
 cat("\n\n========================================================\n")
 cat("  COMBINED: PROVINCIAL PUBLISHED + CSA SPLITS (GDP + Jobs)\n")
-cat("  >>> V2: OUTPUT-WEIGHTED INDIRECT MULTIPLIERS <<<\n")
+cat("  >>> V3: SINGLE-ANCHOR DIRECT + OUTPUT-WEIGHTED INDIRECT <<<\n")
 cat("========================================================\n")
 cat("Total rows:", nrow(combined), "\n")
 cat("Published:", sum(combined$source == "StatCan published"), "\n")
@@ -736,19 +753,19 @@ combined %>%
 # STEP 9: Output tables — show indirect variation
 # =============================================================================
 
-cat("\n\n=== ALL SUB-DOMAIN SPLITS — NATIONAL 2021 (v2: weighted indirect) ===\n")
+cat("\n\n=== ALL SUB-DOMAIN SPLITS — NATIONAL 2021 (v3: single-anchor direct + weighted indirect) ===\n")
 all_splits %>%
   filter(year == "2021", geo == "Canada") %>%
-  select(Domain, parent_code, output_wt,
+  select(Domain, indirect_parent_code, output_wt,
          gdp_direct, gdp_indirect, gdp_induced, gdp_total,
          jobs_direct, jobs_indirect, jobs_induced, jobs_total) %>%
   arrange(desc(gdp_total)) %>%
   print(n = 35, width = Inf)
 
-cat("\n=== ONTARIO 2021 WITHIN PROVINCE (v2: weighted indirect) ===\n")
+cat("\n=== ONTARIO 2021 WITHIN PROVINCE (v3: single-anchor direct + weighted indirect) ===\n")
 all_splits %>%
   filter(year == "2021", geo == "Ontario", coverage == "Within province") %>%
-  select(Domain, parent_code, output_wt,
+  select(Domain, indirect_parent_code, output_wt,
          gdp_direct, gdp_indirect, gdp_induced, gdp_total,
          jobs_direct, jobs_indirect, jobs_induced, jobs_total) %>%
   arrange(desc(gdp_total)) %>%
