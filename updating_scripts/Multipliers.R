@@ -472,8 +472,7 @@ prov_published <- pub_gdp %>%
 
 prov_new <- all_splits %>%
   filter(geo != "Canada") %>%
-  mutate(industry_code = paste0("csa_", gsub("[^A-Za-z]", "",
-                                             substr(gsub(" ", "", Domain), 1, 10))),
+  mutate(industry_code = paste0("csa_", gsub("[^A-Za-z0-9]", "_", Domain)),
          domain_label = Domain,
          source = "CSA split") %>%
   select(year, geo, coverage, industry_code, domain_label,

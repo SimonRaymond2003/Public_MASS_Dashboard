@@ -119,11 +119,13 @@ get_mult_row <- function(prov, yr, ind, mdf = mult_combined) {
   m <- mdf[mdf$industry_code == ind, ]
   if (nrow(m) >= 1) {
     r <- as.data.frame(lapply(m[, MULT_COLS, drop=FALSE], mean, na.rm=TRUE))
-    r$Province <- prov; r$year <- yr; r$industry_code <- ind; return(r)
+    r$Province <- prov; r$year <- yr; r$industry_code <- ind
+    r$source <- NA_character_; r$domain_label <- NA_character_; return(r)
   }
   m <- mdf[mdf$industry_code == "BS71A000", ]
   r <- as.data.frame(lapply(m[, MULT_COLS, drop=FALSE], mean, na.rm=TRUE))
-  r$Province <- prov; r$year <- yr; r$industry_code <- "BS71A000"; r
+  r$Province <- prov; r$year <- yr; r$industry_code <- "BS71A000"
+  r$source <- NA_character_; r$domain_label <- NA_character_; r
 }
 
 get_mult_row_mixture <- function(prov, yr, ind_vec, mdf = mult_combined) {

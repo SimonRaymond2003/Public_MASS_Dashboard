@@ -1,106 +1,106 @@
 Category,Discipline,n,industry_code_1,industry_code_2
-Arts Education,Arts Council,0,csa_Educationa,csa_Governance
-Arts Education,Arts Service Organization,0,csa_Educationa,csa_Governance
-Arts Education,Broadcasting,0,csa_Educationa,csa_Broadcasti
-Arts Education,Community Arts,0,csa_Educationa,csa_Performing
-Arts Education,Crafts,0,csa_Educationa,csa_Crafts
-Arts Education,Cultural,11,csa_Educationa,csa_Cultureher
-Arts Education,Dance,219,csa_Educationa,csa_Performing
-Arts Education,Film,6,csa_Educationa,csa_Filmandvid
-Arts Education,Literary,0,csa_Educationa,csa_Books
-Arts Education,Media Arts,0,csa_Educationa,csa_Interactiv
-Arts Education,Multidisciplinary,358,csa_Educationa,
-Arts Education,Museum,0,csa_Educationa,csa_Cultureher
-Arts Education,Music & Sound,1223,csa_Educationa,csa_Soundrecor
-Arts Education,Performing Arts,273,csa_Educationa,csa_Performing
-Arts Education,Visual Arts,150,csa_Educationa,csa_Originalvi
-Arts In Service To,Arts Council,0,BS624000,csa_Governance
-Arts In Service To,Arts Service Organization,0,BS624000,csa_Governance
-Arts In Service To,Broadcasting,0,BS624000,csa_Broadcasti
-Arts In Service To,Community Arts,0,BS624000,csa_Performing
+Arts Education,Arts Council,0,csa_Education_and_training__culture_,csa_Governance__funding_and_professional_support__culture_
+Arts Education,Arts Service Organization,0,csa_Education_and_training__culture_,csa_Governance__funding_and_professional_support__culture_
+Arts Education,Broadcasting,0,csa_Education_and_training__culture_,csa_Broadcasting
+Arts Education,Community Arts,0,csa_Education_and_training__culture_,csa_Performing_arts
+Arts Education,Crafts,0,csa_Education_and_training__culture_,csa_Crafts
+Arts Education,Cultural,11,csa_Education_and_training__culture_,csa_Culture_heritage
+Arts Education,Dance,219,csa_Education_and_training__culture_,csa_Performing_arts
+Arts Education,Film,6,csa_Education_and_training__culture_,csa_Film_and_video
+Arts Education,Literary,0,csa_Education_and_training__culture_,csa_Books
+Arts Education,Media Arts,0,csa_Education_and_training__culture_,csa_Interactive_media
+Arts Education,Multidisciplinary,358,csa_Education_and_training__culture_,
+Arts Education,Museum,0,csa_Education_and_training__culture_,csa_Culture_heritage
+Arts Education,Music & Sound,1223,csa_Education_and_training__culture_,csa_Sound_recording_____Sound_recording
+Arts Education,Performing Arts,273,csa_Education_and_training__culture_,csa_Performing_arts
+Arts Education,Visual Arts,150,csa_Education_and_training__culture_,csa_Original_visual_art
+Arts In Service To,Arts Council,0,BS624000,csa_Governance__funding_and_professional_support__culture_
+Arts In Service To,Arts Service Organization,0,BS624000,csa_Governance__funding_and_professional_support__culture_
+Arts In Service To,Broadcasting,0,BS624000,csa_Broadcasting
+Arts In Service To,Community Arts,0,BS624000,csa_Performing_arts
 Arts In Service To,Crafts,0,BS624000,csa_Crafts
-Arts In Service To,Cultural,11,BS624000,csa_Cultureher
-Arts In Service To,Dance,0,BS624000,csa_Performing
-Arts In Service To,Film,0,BS624000,csa_Filmandvid
+Arts In Service To,Cultural,11,BS624000,csa_Culture_heritage
+Arts In Service To,Dance,0,BS624000,csa_Performing_arts
+Arts In Service To,Film,0,BS624000,csa_Film_and_video
 Arts In Service To,Literary,11,BS624000,csa_Books
-Arts In Service To,Media Arts,21,BS624000,csa_Interactiv
-Arts In Service To,Multidisciplinary,324,BS624000,csa_Multidomai
-Arts In Service To,Museum,0,BS624000,csa_Cultureher
-Arts In Service To,Music & Sound,57,BS624000,csa_Soundrecor
-Arts In Service To,Performing Arts,101,BS624000,csa_Performing
-Arts In Service To,Visual Arts,11,BS624000,csa_Originalvi
-Arts Organization,Arts Council,269,csa_Governance,
-Arts Organization,Arts Service Organization,0,csa_Governance,
-Arts Organization,Broadcasting,44,csa_Broadcasti,
-Arts Organization,Community Arts,291,csa_Performing,
+Arts In Service To,Media Arts,21,BS624000,csa_Interactive_media
+Arts In Service To,Multidisciplinary,324,BS624000,csa_Multi_domain
+Arts In Service To,Museum,0,BS624000,csa_Culture_heritage
+Arts In Service To,Music & Sound,57,BS624000,csa_Sound_recording_____Sound_recording
+Arts In Service To,Performing Arts,101,BS624000,csa_Performing_arts
+Arts In Service To,Visual Arts,11,BS624000,csa_Original_visual_art
+Arts Organization,Arts Council,269,csa_Governance__funding_and_professional_support__culture_,
+Arts Organization,Arts Service Organization,0,csa_Governance__funding_and_professional_support__culture_,
+Arts Organization,Broadcasting,44,csa_Broadcasting,
+Arts Organization,Community Arts,291,csa_Performing_arts,
 Arts Organization,Crafts,422,csa_Crafts,
-Arts Organization,Cultural,1589,csa_Cultureher,
-Arts Organization,Dance,2842,csa_Performing,
-Arts Organization,Film,448,csa_Filmandvid,
+Arts Organization,Cultural,1589,csa_Culture_heritage,
+Arts Organization,Dance,2842,csa_Performing_arts,
+Arts Organization,Film,448,csa_Film_and_video,
 Arts Organization,Literary,626,csa_Books,
-Arts Organization,Media Arts,367,csa_Interactiv,
-Arts Organization,Multidisciplinary,2214,csa_Multidomai,
-Arts Organization,Museum,570,csa_Cultureher,
-Arts Organization,Music & Sound,15182,csa_Soundrecor,
-Arts Organization,Performing Arts,10677,csa_Performing,
-Arts Organization,Visual Arts,3131,csa_Originalvi,
-Arts Service Organization,Arts Council,1577,csa_Governance,
-Arts Service Organization,Arts Service Organization,19,csa_Governance,
-Arts Service Organization,Broadcasting,0,csa_Governance,csa_Broadcasti
-Arts Service Organization,Community Arts,33,csa_Governance,csa_Performing
-Arts Service Organization,Crafts,99,csa_Governance,csa_Crafts
-Arts Service Organization,Cultural,11,csa_Governance,csa_Cultureher
-Arts Service Organization,Dance,53,csa_Governance,csa_Performing
-Arts Service Organization,Film,10,csa_Governance,csa_Filmandvid
-Arts Service Organization,Literary,126,csa_Governance,csa_Books
-Arts Service Organization,Media Arts,19,csa_Governance,csa_Interactiv
-Arts Service Organization,Multidisciplinary,408,csa_Governance,csa_Multidomai
-Arts Service Organization,Museum,41,csa_Governance,csa_Cultureher
-Arts Service Organization,Music & Sound,113,csa_Governance,csa_Soundrecor
-Arts Service Organization,Performing Arts,135,csa_Governance,csa_Performing
-Arts Service Organization,Visual Arts,85,csa_Governance,csa_Originalvi
-Deaf & Disability Arts,Arts Council,0,csa_Multidomai,csa_Governance
-Deaf & Disability Arts,Arts Service Organization,0,csa_Multidomai,csa_Governance
-Deaf & Disability Arts,Broadcasting,0,csa_Multidomai,csa_Broadcasti
-Deaf & Disability Arts,Community Arts,0,csa_Multidomai,csa_Performing
-Deaf & Disability Arts,Crafts,0,csa_Multidomai,csa_Crafts
-Deaf & Disability Arts,Cultural,0,csa_Multidomai,csa_Cultureher
-Deaf & Disability Arts,Dance,0,csa_Multidomai,csa_Performing
-Deaf & Disability Arts,Film,0,csa_Multidomai,csa_Filmandvid
-Deaf & Disability Arts,Literary,0,csa_Multidomai,csa_Books
-Deaf & Disability Arts,Media Arts,0,csa_Multidomai,csa_Interactiv
-Deaf & Disability Arts,Multidisciplinary,97,csa_Multidomai,
-Deaf & Disability Arts,Museum,0,csa_Multidomai,csa_Cultureher
-Deaf & Disability Arts,Music & Sound,11,csa_Multidomai,csa_Soundrecor
-Deaf & Disability Arts,Performing Arts,22,csa_Multidomai,csa_Performing
-Deaf & Disability Arts,Visual Arts,6,csa_Multidomai,csa_Originalvi
-Festivals,Arts Council,0,csa_Festivalsa,csa_Governance
-Festivals,Arts Service Organization,0,csa_Festivalsa,csa_Governance
-Festivals,Broadcasting,0,csa_Festivalsa,csa_Broadcasti
-Festivals,Community Arts,0,csa_Festivalsa,csa_Performing
-Festivals,Crafts,0,csa_Festivalsa,csa_Crafts
-Festivals,Cultural,92,csa_Festivalsa,csa_Cultureher
-Festivals,Dance,80,csa_Festivalsa,csa_Performing
-Festivals,Film,429,csa_Festivalsa,csa_Filmandvid
-Festivals,Literary,188,csa_Festivalsa,csa_Books
-Festivals,Media Arts,0,csa_Festivalsa,csa_Interactiv
-Festivals,Multidisciplinary,353,csa_Festivalsa,
-Festivals,Museum,0,csa_Festivalsa,csa_Cultureher
-Festivals,Music & Sound,2512,csa_Festivalsa,csa_Soundrecor
-Festivals,Performing Arts,409,csa_Festivalsa,csa_Performing
-Festivals,Visual Arts,61,csa_Festivalsa,csa_Originalvi
-NASO,Arts Council,11,csa_Governance,
-NASO,Arts Service Organization,0,csa_Governance,
-NASO,Broadcasting,0,csa_Governance,csa_Broadcasti
-NASO,Community Arts,0,csa_Governance,csa_Performing
-NASO,Crafts,11,csa_Governance,csa_Crafts
-NASO,Cultural,0,csa_Governance,csa_Cultureher
-NASO,Dance,33,csa_Governance,csa_Performing
-NASO,Film,11,csa_Governance,csa_Filmandvid
-NASO,Literary,67,csa_Governance,csa_Books
-NASO,Media Arts,11,csa_Governance,csa_Interactiv
-NASO,Multidisciplinary,20,csa_Governance,csa_Multidomai
-NASO,Museum,0,csa_Governance,csa_Cultureher
-NASO,Music & Sound,35,csa_Governance,csa_Soundrecor
-NASO,Performing Arts,60,csa_Governance,csa_Performing
-NASO,Visual Arts,12,csa_Governance,csa_Originalvi
+Arts Organization,Media Arts,367,csa_Interactive_media,
+Arts Organization,Multidisciplinary,2214,csa_Multi_domain,
+Arts Organization,Museum,570,csa_Culture_heritage,
+Arts Organization,Music & Sound,15182,csa_Sound_recording_____Sound_recording,
+Arts Organization,Performing Arts,10677,csa_Performing_arts,
+Arts Organization,Visual Arts,3131,csa_Original_visual_art,
+Arts Service Organization,Arts Council,1577,csa_Governance__funding_and_professional_support__culture_,
+Arts Service Organization,Arts Service Organization,19,csa_Governance__funding_and_professional_support__culture_,
+Arts Service Organization,Broadcasting,0,csa_Governance__funding_and_professional_support__culture_,csa_Broadcasting
+Arts Service Organization,Community Arts,33,csa_Governance__funding_and_professional_support__culture_,csa_Performing_arts
+Arts Service Organization,Crafts,99,csa_Governance__funding_and_professional_support__culture_,csa_Crafts
+Arts Service Organization,Cultural,11,csa_Governance__funding_and_professional_support__culture_,csa_Culture_heritage
+Arts Service Organization,Dance,53,csa_Governance__funding_and_professional_support__culture_,csa_Performing_arts
+Arts Service Organization,Film,10,csa_Governance__funding_and_professional_support__culture_,csa_Film_and_video
+Arts Service Organization,Literary,126,csa_Governance__funding_and_professional_support__culture_,csa_Books
+Arts Service Organization,Media Arts,19,csa_Governance__funding_and_professional_support__culture_,csa_Interactive_media
+Arts Service Organization,Multidisciplinary,408,csa_Governance__funding_and_professional_support__culture_,csa_Multi_domain
+Arts Service Organization,Museum,41,csa_Governance__funding_and_professional_support__culture_,csa_Culture_heritage
+Arts Service Organization,Music & Sound,113,csa_Governance__funding_and_professional_support__culture_,csa_Sound_recording_____Sound_recording
+Arts Service Organization,Performing Arts,135,csa_Governance__funding_and_professional_support__culture_,csa_Performing_arts
+Arts Service Organization,Visual Arts,85,csa_Governance__funding_and_professional_support__culture_,csa_Original_visual_art
+Deaf & Disability Arts,Arts Council,0,csa_Multi_domain,csa_Governance__funding_and_professional_support__culture_
+Deaf & Disability Arts,Arts Service Organization,0,csa_Multi_domain,csa_Governance__funding_and_professional_support__culture_
+Deaf & Disability Arts,Broadcasting,0,csa_Multi_domain,csa_Broadcasting
+Deaf & Disability Arts,Community Arts,0,csa_Multi_domain,csa_Performing_arts
+Deaf & Disability Arts,Crafts,0,csa_Multi_domain,csa_Crafts
+Deaf & Disability Arts,Cultural,0,csa_Multi_domain,csa_Culture_heritage
+Deaf & Disability Arts,Dance,0,csa_Multi_domain,csa_Performing_arts
+Deaf & Disability Arts,Film,0,csa_Multi_domain,csa_Film_and_video
+Deaf & Disability Arts,Literary,0,csa_Multi_domain,csa_Books
+Deaf & Disability Arts,Media Arts,0,csa_Multi_domain,csa_Interactive_media
+Deaf & Disability Arts,Multidisciplinary,97,csa_Multi_domain,
+Deaf & Disability Arts,Museum,0,csa_Multi_domain,csa_Culture_heritage
+Deaf & Disability Arts,Music & Sound,11,csa_Multi_domain,csa_Sound_recording_____Sound_recording
+Deaf & Disability Arts,Performing Arts,22,csa_Multi_domain,csa_Performing_arts
+Deaf & Disability Arts,Visual Arts,6,csa_Multi_domain,csa_Original_visual_art
+Festivals,Arts Council,0,csa_Festivals_and_celebrations,csa_Governance__funding_and_professional_support__culture_
+Festivals,Arts Service Organization,0,csa_Festivals_and_celebrations,csa_Governance__funding_and_professional_support__culture_
+Festivals,Broadcasting,0,csa_Festivals_and_celebrations,csa_Broadcasting
+Festivals,Community Arts,0,csa_Festivals_and_celebrations,csa_Performing_arts
+Festivals,Crafts,0,csa_Festivals_and_celebrations,csa_Crafts
+Festivals,Cultural,92,csa_Festivals_and_celebrations,csa_Culture_heritage
+Festivals,Dance,80,csa_Festivals_and_celebrations,csa_Performing_arts
+Festivals,Film,429,csa_Festivals_and_celebrations,csa_Film_and_video
+Festivals,Literary,188,csa_Festivals_and_celebrations,csa_Books
+Festivals,Media Arts,0,csa_Festivals_and_celebrations,csa_Interactive_media
+Festivals,Multidisciplinary,353,csa_Festivals_and_celebrations,
+Festivals,Museum,0,csa_Festivals_and_celebrations,csa_Culture_heritage
+Festivals,Music & Sound,2512,csa_Festivals_and_celebrations,csa_Sound_recording_____Sound_recording
+Festivals,Performing Arts,409,csa_Festivals_and_celebrations,csa_Performing_arts
+Festivals,Visual Arts,61,csa_Festivals_and_celebrations,csa_Original_visual_art
+NASO,Arts Council,11,csa_Governance__funding_and_professional_support__culture_,
+NASO,Arts Service Organization,0,csa_Governance__funding_and_professional_support__culture_,
+NASO,Broadcasting,0,csa_Governance__funding_and_professional_support__culture_,csa_Broadcasting
+NASO,Community Arts,0,csa_Governance__funding_and_professional_support__culture_,csa_Performing_arts
+NASO,Crafts,11,csa_Governance__funding_and_professional_support__culture_,csa_Crafts
+NASO,Cultural,0,csa_Governance__funding_and_professional_support__culture_,csa_Culture_heritage
+NASO,Dance,33,csa_Governance__funding_and_professional_support__culture_,csa_Performing_arts
+NASO,Film,11,csa_Governance__funding_and_professional_support__culture_,csa_Film_and_video
+NASO,Literary,67,csa_Governance__funding_and_professional_support__culture_,csa_Books
+NASO,Media Arts,11,csa_Governance__funding_and_professional_support__culture_,csa_Interactive_media
+NASO,Multidisciplinary,20,csa_Governance__funding_and_professional_support__culture_,csa_Multi_domain
+NASO,Museum,0,csa_Governance__funding_and_professional_support__culture_,csa_Culture_heritage
+NASO,Music & Sound,35,csa_Governance__funding_and_professional_support__culture_,csa_Sound_recording_____Sound_recording
+NASO,Performing Arts,60,csa_Governance__funding_and_professional_support__culture_,csa_Performing_arts
+NASO,Visual Arts,12,csa_Governance__funding_and_professional_support__culture_,csa_Original_visual_art
