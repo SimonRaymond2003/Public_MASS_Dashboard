@@ -158,7 +158,7 @@ ui <- page_fluid(
 
   tags$script(HTML("
     document.addEventListener('DOMContentLoaded', function() {
-      ['filter_info_btn', 'year_info_btn'].forEach(function(id) {
+      ['filter_info_btn', 'year_info_btn', 'port_gdp_mult_info_btn'].forEach(function(id) {
         var el = document.getElementById(id);
         if (el && bootstrap && bootstrap.Popover) {
           new bootstrap.Popover(el, { trigger: 'click' });
@@ -167,6 +167,18 @@ ui <- page_fluid(
               bootstrap.Popover.getInstance(el) && bootstrap.Popover.getInstance(el).hide();
             }
           });
+        }
+      });
+      // sum_gdp_mult_info_btn lives inside renderUI so we use delegation
+      document.addEventListener('click', function(e) {
+        var tgt = e.target.closest('#sum_gdp_mult_info_btn');
+        if (tgt && bootstrap && bootstrap.Popover) {
+          var inst = bootstrap.Popover.getOrCreateInstance(tgt, { trigger: 'manual' });
+          inst.toggle();
+          e.stopPropagation();
+        } else {
+          var open = document.getElementById('sum_gdp_mult_info_btn');
+          if (open) { var i = bootstrap.Popover.getInstance(open); if (i) i.hide(); }
         }
       });
     });
@@ -349,7 +361,12 @@ ui <- page_fluid(
   conditionalPanel(condition = "output.port_has_orgs",
                    fluidRow(class = "calc-row-equal", style = "display:flex; align-items:stretch; margin-bottom:18px;",
                             column(4, div(class = "chart-card", style = sprintf("border-top:3px solid %s; height:100%%;", NAVY),
-                                          div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:8px;", "Portfolio ", term("GDP"), " Impact"),
+                                          div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:8px;", "Portfolio ", term("GDP"), " Impact",
+                                              tags$span("ⓘ", id = "port_gdp_mult_info_btn",
+                                                        `data-bs-toggle` = "popover", `data-bs-placement` = "bottom",
+                                                        `data-bs-content` = "Multipliers are applied assuming the broader economy is unchanged. Removing this subsector would not materially shift the multipliers themselves. Results are indicative of scale, not counterfactual impact.",
+                                                        `data-bs-trigger` = "click",
+                                                        style = "cursor:pointer; font-size:0.6rem; color:rgba(0,0,0,0.35); font-weight:400; text-transform:none; letter-spacing:0; margin-left:3px;")),
                                           div(style = sprintf("font-size:1.8rem; font-weight:800; color:%s; line-height:1;", NAVY), textOutput("port_gdp_total", inline = TRUE)),
                                           div(style = "font-size:0.72rem; color:#aaa; margin-bottom:10px;", "total contribution"),
                                           uiOutput("port_gdp_breakdown"),

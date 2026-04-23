@@ -94,7 +94,13 @@ server <- function(input, output, session) {
   output$kpi_panel_impact <- renderUI({
     a <- agg()
     div(class = "chart-card", style = sprintf("border-top:3px solid %s; height:100%%;", NAVY),
-        div(style = "font-size:0.7rem; font-weight:800; text-transform:uppercase; letter-spacing:0.6px; color:#aaa; margin-bottom:4px;", "Economic Impact"),
+        div(style = "font-size:0.7rem; font-weight:800; text-transform:uppercase; letter-spacing:0.6px; color:#aaa; margin-bottom:4px;",
+            "Economic Impact",
+            tags$span("ⓘ", id = "sum_gdp_mult_info_btn",
+                      `data-bs-toggle` = "popover", `data-bs-placement` = "bottom",
+                      `data-bs-content` = "Multipliers are applied assuming the broader economy is unchanged. Removing this subsector would not materially shift the multipliers themselves. Results are indicative of scale, not counterfactual impact.",
+                      `data-bs-trigger` = "click",
+                      style = "cursor:pointer; font-size:0.6rem; color:rgba(0,0,0,0.35); font-weight:400; text-transform:none; letter-spacing:0; margin-left:3px;")),
         stat_row("Total GDP Contribution", paste0("$", comma(round(a$gdp_total))),  paste0("med. $", comma(round(a$gdp_med_org)),  " / org")),
         stat_row("Total Jobs Supported",   comma(round(a$jobs_total)),              paste0("med. ", round(a$jobs_med_org, 1), " / org")))
   })

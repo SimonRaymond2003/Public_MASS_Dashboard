@@ -11,7 +11,6 @@ shinyApp(ui, server)
 
 # to do
 
-# info (i) on assumptions when we apply multipliers
 # Switch geographic tiles used 
 # state to use primary/mixed and that custom is if really into it... same for exp/rev
 # add names for stats canada multipliers in selecting custom
@@ -25,7 +24,6 @@ shinyApp(ui, server)
 #### seperate tab ####
 
 # input multiple at a time and one at a time
-# 
 
 
 # General Notes
