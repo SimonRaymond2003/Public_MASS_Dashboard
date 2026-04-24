@@ -266,7 +266,8 @@ server <- function(input, output, session) {
   
   # Reactive store for portfolio orgs
   port_orgs <- reactiveVal(data.frame(
-    id = character(), name = character(), amount = numeric(),
+    id = character(), name = character(), count = numeric(),
+    amount = numeric(),
     prov = character(), cat = character(), disc = character(),
     yr = numeric(), org_age = numeric(), base = character(),
     mult_lbl = character(),
@@ -296,17 +297,105 @@ server <- function(input, output, session) {
     updateSelectInput(session, "port_cat", choices = valid_cats, selected = cur)
   }, ignoreInit = TRUE)
   
-  # Amount input with dynamic label
-  output$port_amount_label <- renderUI({
-    lbl <- if (!is.null(input$port_base_metric) && input$port_base_metric == "rev") "Revenue ($)" else "Expenditures ($)"
-    tagList(
-      tags$label(lbl),
-      tags$input(id = "port_amount", type = "number", value = "100000", min = "0", step = "1",
-                 style = "width:100%; padding:7px 10px; border:1px solid #ddd; border-radius:8px; font-size:0.82rem; background:white; -moz-appearance:textfield;",
-                 onchange = "Shiny.setInputValue('port_amount', parseFloat(this.value) || 0)"),
-      tags$style(HTML("input[id='port_amount']::-webkit-outer-spin-button, input[id='port_amount']::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }")))
+  # Bulk category/discipline cascading
+  observeEvent(input$bulk_cat, {
+    valid_discs <- VALID_COMBOS_FULL %>% filter(Category == input$bulk_cat) %>% pull(Discipline) %>% sort()
+    cur <- if (!is.null(input$bulk_disc) && input$bulk_disc %in% valid_discs) input$bulk_disc else valid_discs[1]
+    updateSelectInput(session, "bulk_disc", choices = valid_discs, selected = cur)
+  }, ignoreInit = FALSE)
+
+  observeEvent(input$bulk_disc, {
+    valid_cats <- VALID_COMBOS_FULL %>% filter(Discipline == input$bulk_disc) %>% pull(Category) %>% sort()
+    cur <- if (!is.null(input$bulk_cat) && input$bulk_cat %in% valid_cats) input$bulk_cat else valid_cats[1]
+    updateSelectInput(session, "bulk_cat", choices = valid_cats, selected = cur)
+  }, ignoreInit = TRUE)
+
+  # Bulk add handler
+  observeEvent(input$bulk_add, {
+    n   <- as.integer(input$bulk_n %||% 1)
+    amt <- as.numeric(input$bulk_amount %||% 0)
+    if (length(n) == 0 || length(amt) == 0 || is.na(n) || is.na(amt) || n < 1 || amt <= 0) return()
+    prov <- input$bulk_prov; cat <- input$bulk_cat; disc <- input$bulk_disc
+    yr   <- as.numeric(input$bulk_year)
+    use_rev    <- !is.null(input$bulk_base_metric) && input$bulk_base_metric == "rev"
+    use_mix    <- !is.null(input$bulk_mult_method) && input$bulk_mult_method == "mixture"
+    use_custom <- !is.null(input$bulk_mult_method) && input$bulk_mult_method == "custom"
+
+    combo_row   <- combo_map_v2 %>% filter(Category == cat, Discipline == disc)
+    ind_primary <- if (nrow(combo_row) > 0) combo_row$ind_primary[1] else "BS71A000"
+    ind_all     <- if (nrow(combo_row) > 0) combo_row$ind_all[[1]]   else "BS71A000"
+
+    weights <- NULL; method_lbl <- "Primary"
+    if (use_custom) {
+      custom_codes <- Filter(function(v) !is.null(v) && v != "" && v != "__placeholder__", lapply(1:5, function(k) input[[paste0("bulk_code_", k)]]))
+      custom_codes <- unlist(custom_codes)
+      if (is.null(custom_codes) || length(custom_codes) == 0) return()
+      n_c <- length(custom_codes)
+      if (n_c == 1) { weights <- 1; m <- get_mult_row(prov, yr, custom_codes) }
+      else if (n_c == 2) {
+        w1 <- if (!is.null(input$bulk_weight_slider)) input$bulk_weight_slider / 100 else 0.5
+        weights <- c(w1, 1 - w1); m <- get_mult_row_weighted(prov, yr, custom_codes, weights)
+      } else {
+        raw_w <- sapply(seq_len(n_c), function(i) { v <- input[[paste0("bulk_cw_", i)]]; if (is.null(v) || is.na(as.numeric(v))) round(100 / n_c) else as.numeric(v) })
+        weights <- raw_w / sum(raw_w); m <- get_mult_row_weighted(prov, yr, custom_codes, weights)
+      }
+      ind_all <- custom_codes; method_lbl <- "Custom"
+    } else if (use_mix && length(ind_all) == 2) {
+      w1 <- if (!is.null(input$bulk_weight_slider)) input$bulk_weight_slider / 100 else 0.5
+      weights <- c(w1, 1 - w1); m <- get_mult_row_weighted(prov, yr, ind_all, weights); method_lbl <- "Mixture"
+    } else if (use_mix && length(ind_all) > 1) {
+      weights <- rep(1 / length(ind_all), length(ind_all)); m <- get_mult_row_mixture(prov, yr, ind_all); method_lbl <- "Mixture"
+    } else {
+      weights <- 1; m <- get_mult_row(prov, yr, ind_primary)
+    }
+
+    codes_used <- if (use_custom) ind_all else if (use_mix && length(ind_all) > 1) ind_all else ind_primary
+    ind_rows   <- lapply(codes_used, function(ind) get_mult_row(prov, yr, ind))
+    mult_lbl   <- if (length(codes_used) == 1) codes_used else paste0(codes_used, " (", round(weights * 100), "%)", collapse = " + ")
+
+    total_amt <- amt * n
+    amt_m     <- total_amt / 1e6
+    org_name  <- paste0(n, " × ", disc, " (", prov, ")")
+    org_id    <- paste0("p_", as.integer(Sys.time()), "_", sample(1000, 1))
+
+    dl <- port_mult_detail()
+    dl[[org_id]] <- list(codes = codes_used, weights = weights, ind_primary = ind_primary,
+                         ind_rows = ind_rows, m_eff = m, method = method_lbl,
+                         count = n, amt_per_org = amt)
+    port_mult_detail(dl)
+
+    new_row <- data.frame(
+      id = org_id, name = org_name, count = n, amount = total_amt,
+      prov = prov, cat = cat, disc = disc,
+      yr = yr, org_age = NA_real_,
+      base = if (use_rev) "Rev" else "Exp",
+      mult_lbl = mult_lbl,
+      gdp_d  = total_amt * m$gdp_direct[1],
+      gdp_i  = total_amt * m$gdp_indirect[1],
+      gdp_in = total_amt * m$gdp_induced[1],
+      gdp_t  = total_amt * m$gdp_total[1],
+      gdp_wp = total_amt * m$gdp_wp_total[1],
+      jobs_d  = amt_m * m$jobs_direct[1],
+      jobs_i  = amt_m * m$jobs_indirect[1],
+      jobs_in = amt_m * m$jobs_induced[1],
+      jobs_t  = amt_m * m$jobs_total[1],
+      jobs_wp = amt_m * m$jobs_wp_total[1],
+      pred_val = NA_real_, pred_gdp_t = NA_real_, pred_gdp_wp = NA_real_,
+      pred_jobs_t = NA_real_, pred_jobs_wp = NA_real_,
+      stringsAsFactors = FALSE
+    )
+    port_orgs(rbind(port_orgs(), new_row))
   })
-  
+
+  # Amount input with dynamic label
+  output$port_amount_lbl <- renderText({
+    if (!is.null(input$port_base_metric) && input$port_base_metric == "rev") "Revenue ($)" else "Expenditures ($)"
+  })
+
+  output$bulk_amount_lbl <- renderText({
+    if (!is.null(input$bulk_base_metric) && input$bulk_base_metric == "rev") "Revenue per Org ($)" else "Expenditures per Org ($)"
+  })
+
   # Industry codes for current portfolio selection (for mixture slider)
   port_ind_codes <- reactive({
     cat <- input$port_cat; disc <- input$port_disc
@@ -314,8 +403,15 @@ server <- function(input, output, session) {
     combo_row <- combo_map_v2 %>% filter(Category == cat, Discipline == disc)
     if (nrow(combo_row) > 0) combo_row$ind_all[[1]] else "BS71A000"
   })
-  
-  # Dynamic mixture weight slider for portfolio
+
+  bulk_ind_codes <- reactive({
+    cat <- input$bulk_cat; disc <- input$bulk_disc
+    req(cat, disc)
+    combo_row <- combo_map_v2 %>% filter(Category == cat, Discipline == disc)
+    if (nrow(combo_row) > 0) combo_row$ind_all[[1]] else "BS71A000"
+  })
+
+  # Weight UI — mixture slider or custom code selects
   output$port_weight_ui <- renderUI({
     method <- input$port_mult_method %||% "single"
 
@@ -324,64 +420,64 @@ server <- function(input, output, session) {
       n <- length(codes)
       if (n < 2) return(tags$div(style = "font-size:0.68rem; color:#aaa; font-style:italic; padding:2px 0;",
                                  paste0("Only one industry code applies (", codes[1], ") — no mixing needed.")))
+      default_v <- round(100 / n)
+      cards <- lapply(seq_len(n), function(i) {
+        lbl <- names(CUSTOM_IND_CODES)[CUSTOM_IND_CODES == codes[i]][1] %||% codes[i]
+        tags$div(style = "flex:1; min-width:110px; background:#f5f3ef; border-radius:8px; padding:8px 10px;",
+          tags$div(style = "font-size:0.68rem; font-weight:700; color:#444; margin-bottom:1px; line-height:1.3;", lbl),
+          tags$div(style = "font-size:0.55rem; color:#bbb; margin-bottom:6px;", codes[i]),
+          tags$input(id = paste0("port_cw_", i), type = "range",
+                     min = 0, max = 100, value = default_v, step = 1,
+                     style = "width:100%; cursor:pointer; accent-color:#1B1464; margin-bottom:4px;",
+                     onmousedown = sprintf("cwSnapshot('port',%d);", n),
+                     ontouchstart = sprintf("cwSnapshot('port',%d);", n),
+                     oninput = sprintf("cwSliderChanged('port',%d,parseFloat(this.value),%d);", i, n)),
+          tags$div(style = "display:flex; align-items:center; gap:4px;",
+            tags$input(id = paste0("port_cwn_", i), type = "number",
+                       min = 0, max = 100, value = default_v, step = 1,
+                       style = "width:44px; padding:2px 4px; border:1px solid #ddd; border-radius:4px; font-size:0.7rem; text-align:center; background:white;",
+                       oninput = sprintf("cwNumChanged('port',%d,parseFloat(this.value),%d);", i, n)),
+            tags$span(style = "font-size:0.65rem; color:#aaa;", "%"))
+        )
+      })
       return(tagList(
-        tags$div(style = "display:flex; justify-content:space-between; font-size:0.65rem; font-weight:600; color:#555; margin-bottom:2px;",
-                 tags$span(tags$div(codes[1])),
-                 tags$span(style="text-align:right;", tags$div(codes[2]))),
-        sliderInput("port_weight_slider", NULL, min = 0, max = 100, value = 50, step = 1, post = "%", width = "100%"),
-        tags$div(style = "display:flex; justify-content:space-between; font-size:0.6rem; color:#aaa; margin-top:-8px;",
-                 tags$span(id = "port_w1_label", "50%"), tags$span(id = "port_w2_label", "50%")),
-        tags$script(HTML("$(document).on('shiny:inputchanged', function(e) {
-          if (e.name === 'port_weight_slider') {
-            document.getElementById('port_w1_label').textContent = e.value + '%';
-            document.getElementById('port_w2_label').textContent = (100 - e.value) + '%';
-          }
-        });"))
+        tags$div(style = "display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;", cards)
       ))
     }
 
     if (method == "custom") {
-      # collect filled slots to know how many rows to show
       filled <- 0
       for (k in 1:5) {
         v <- input[[paste0("port_code_", k)]]
         if (!is.null(v) && v != "" && v != "__placeholder__") filled <- k else break
       }
       n_rows <- min(filled + 1, 5)
-
-      choices_with_blank <- c("— select a code —" = "__placeholder__", CUSTOM_IND_CODES)
-
+      choices_with_blank <- c("Select a code" = "__placeholder__", CUSTOM_IND_CODES)
       rows <- lapply(seq_len(n_rows), function(i) {
         cur_val <- input[[paste0("port_code_", i)]] %||% "__placeholder__"
         tags$div(style = "display:flex; align-items:center; gap:8px; margin-bottom:5px;",
           tags$span(style = "font-size:0.65rem; font-weight:700; color:#aaa; width:16px; flex-shrink:0;", paste0(i, ".")),
-          selectInput(paste0("port_code_", i), NULL,
-                      choices = choices_with_blank, selected = cur_val,
-                      selectize = FALSE),
+          selectInput(paste0("port_code_", i), NULL, choices = choices_with_blank,
+                      selected = cur_val, selectize = FALSE, width = "100%"),
           if (i <= filled)
             tags$button(type = "button",
-                        style = "background:none; border:none; color:#ccc; cursor:pointer; font-size:1rem; padding:0 4px; line-height:1;",
-                        onclick = sprintf("Shiny.setInputValue('port_code_%d', '__placeholder__'); Shiny.setInputValue('port_code_clear', %d);", i, i),
-                        HTML("&times;"))
+              style = "background:none; border:none; color:#ccc; cursor:pointer; font-size:1rem; padding:0 4px; line-height:1;",
+              onclick = sprintf("Shiny.setInputValue('port_code_%d','__placeholder__');Shiny.setInputValue('port_code_clear',%d);", i, i),
+              HTML("&times;"))
         )
       })
-
       return(tagList(rows))
     }
 
-    NULL  # single method — no UI
+    NULL
   })
 
   output$port_custom_weights_ui <- renderUI({
-    method <- input$port_mult_method %||% "single"
-    if (method != "custom") return(NULL)
     sel <- Filter(function(v) !is.null(v) && v != "" && v != "__placeholder__", lapply(1:5, function(k) input[[paste0("port_code_", k)]]))
     sel <- unlist(sel)
     n <- length(sel)
     if (n < 2) return(NULL)
-
     default_v <- round(100 / n)
-
     cards <- lapply(seq_len(n), function(i) {
       lbl <- names(CUSTOM_IND_CODES)[CUSTOM_IND_CODES == sel[i]][1] %||% sel[i]
       tags$div(style = "flex:1; min-width:110px; max-width:180px; background:#f5f3ef; border-radius:8px; padding:8px 10px;",
@@ -390,60 +486,110 @@ server <- function(input, output, session) {
         tags$input(id = paste0("port_cw_", i), type = "range",
                    min = 0, max = 100, value = default_v, step = 1,
                    style = "width:100%; cursor:pointer; accent-color:#1B1464; margin-bottom:4px;",
-                   onmousedown = sprintf("cwSnapshot(%d);", n),
-                   ontouchstart = sprintf("cwSnapshot(%d);", n),
-                   oninput = sprintf("cwSliderChanged(%d, parseFloat(this.value), %d);", i, n)),
+                   onmousedown = sprintf("cwSnapshot('port',%d);", n),
+                   ontouchstart = sprintf("cwSnapshot('port',%d);", n),
+                   oninput = sprintf("cwSliderChanged('port',%d,parseFloat(this.value),%d);", i, n)),
         tags$div(style = "display:flex; align-items:center; gap:4px;",
           tags$input(id = paste0("port_cwn_", i), type = "number",
                      min = 0, max = 100, value = default_v, step = 1,
                      style = "width:44px; padding:2px 4px; border:1px solid #ddd; border-radius:4px; font-size:0.7rem; text-align:center; background:white;",
-                     oninput = sprintf("cwNumChanged(%d, parseFloat(this.value), %d);", i, n)),
+                     oninput = sprintf("cwNumChanged('port',%d,parseFloat(this.value),%d);", i, n)),
           tags$span(style = "font-size:0.65rem; color:#aaa;", "%"))
       )
     })
+    tagList(tags$div(style = "display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;", cards))
+  })
 
-    js <- "
-      var cwSnap = {};
-      function cwSnapshot(n) {
-        for (var j = 1; j <= n; j++) {
-          var el = document.getElementById('port_cw_' + j);
-          cwSnap[j] = el ? (parseFloat(el.value) || 0) : 0;
-        }
-      }
-      function cwSync(changed, newVal, n) {
-        newVal = Math.min(100, Math.max(0, Math.round(newVal)));
-        var remaining = 100 - newVal;
-        var otherSnapTotal = 0;
-        for (var j = 1; j <= n; j++) {
-          if (j !== changed) otherSnapTotal += (cwSnap[j] || 0);
-        }
-        for (var j = 1; j <= n; j++) {
-          if (j === changed) continue;
-          var snap = cwSnap[j] || 0;
-          var v = otherSnapTotal > 0 ? Math.round((snap / otherSnapTotal) * remaining) : Math.round(remaining / (n - 1));
-          v = Math.max(0, Math.min(100, v));
-          document.getElementById('port_cw_' + j).value = v;
-          document.getElementById('port_cwn_' + j).value = v;
-          Shiny.setInputValue('port_cw_' + j, v);
-        }
-        document.getElementById('port_cw_' + changed).value = newVal;
-        document.getElementById('port_cwn_' + changed).value = newVal;
-        Shiny.setInputValue('port_cw_' + changed, newVal);
-      }
-      function cwSliderChanged(i, val, n) { cwSync(i, parseFloat(val), n); }
-      function cwNumChanged(i, val, n)    { cwSnapshot(n); cwSync(i, parseFloat(val), n); }
-    "
+  output$bulk_weight_ui <- renderUI({
+    method <- input$bulk_mult_method %||% "single"
 
-    tagList(
-      tags$div(style = "display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;", cards),
-      tags$script(HTML(js))
-    )
+    if (method == "mixture") {
+      codes <- bulk_ind_codes()
+      n <- length(codes)
+      if (n < 2) return(tags$div(style = "font-size:0.68rem; color:#aaa; font-style:italic; padding:2px 0;",
+                                 paste0("Only one industry code applies (", codes[1], ") — no mixing needed.")))
+      default_v <- round(100 / n)
+      cards <- lapply(seq_len(n), function(i) {
+        lbl <- names(CUSTOM_IND_CODES)[CUSTOM_IND_CODES == codes[i]][1] %||% codes[i]
+        tags$div(style = "flex:1; min-width:110px; background:#f5f3ef; border-radius:8px; padding:8px 10px;",
+          tags$div(style = "font-size:0.68rem; font-weight:700; color:#444; margin-bottom:1px; line-height:1.3;", lbl),
+          tags$div(style = "font-size:0.55rem; color:#bbb; margin-bottom:6px;", codes[i]),
+          tags$input(id = paste0("bulk_cw_", i), type = "range",
+                     min = 0, max = 100, value = default_v, step = 1,
+                     style = "width:100%; cursor:pointer; accent-color:#1B1464; margin-bottom:4px;",
+                     onmousedown = sprintf("cwSnapshot('bulk',%d);", n),
+                     ontouchstart = sprintf("cwSnapshot('bulk',%d);", n),
+                     oninput = sprintf("cwSliderChanged('bulk',%d,parseFloat(this.value),%d);", i, n)),
+          tags$div(style = "display:flex; align-items:center; gap:4px;",
+            tags$input(id = paste0("bulk_cwn_", i), type = "number",
+                       min = 0, max = 100, value = default_v, step = 1,
+                       style = "width:44px; padding:2px 4px; border:1px solid #ddd; border-radius:4px; font-size:0.7rem; text-align:center; background:white;",
+                       oninput = sprintf("cwNumChanged('bulk',%d,parseFloat(this.value),%d);", i, n)),
+            tags$span(style = "font-size:0.65rem; color:#aaa;", "%"))
+        )
+      })
+      return(tagList(tags$div(style = "display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;", cards)))
+    }
+
+    if (method == "custom") {
+      filled <- 0
+      for (k in 1:5) {
+        v <- input[[paste0("bulk_code_", k)]]
+        if (!is.null(v) && v != "" && v != "__placeholder__") filled <- k else break
+      }
+      n_rows <- min(filled + 1, 5)
+      choices_with_blank <- c("Select a code" = "__placeholder__", CUSTOM_IND_CODES)
+      rows <- lapply(seq_len(n_rows), function(i) {
+        cur_val <- input[[paste0("bulk_code_", i)]] %||% "__placeholder__"
+        tags$div(style = "display:flex; align-items:center; gap:8px; margin-bottom:5px;",
+          tags$span(style = "font-size:0.65rem; font-weight:700; color:#aaa; width:16px; flex-shrink:0;", paste0(i, ".")),
+          selectInput(paste0("bulk_code_", i), NULL, choices = choices_with_blank,
+                      selected = cur_val, selectize = FALSE, width = "100%"),
+          if (i <= filled)
+            tags$button(type = "button",
+              style = "background:none; border:none; color:#ccc; cursor:pointer; font-size:1rem; padding:0 4px; line-height:1;",
+              onclick = sprintf("Shiny.setInputValue('bulk_code_%d','__placeholder__');Shiny.setInputValue('bulk_code_clear',%d);", i, i),
+              HTML("&times;"))
+        )
+      })
+      return(tagList(rows))
+    }
+
+    NULL
+  })
+
+  output$bulk_custom_weights_ui <- renderUI({
+    sel <- Filter(function(v) !is.null(v) && v != "" && v != "__placeholder__", lapply(1:5, function(k) input[[paste0("bulk_code_", k)]]))
+    sel <- unlist(sel)
+    n <- length(sel)
+    if (n < 2) return(NULL)
+    default_v <- round(100 / n)
+    cards <- lapply(seq_len(n), function(i) {
+      lbl <- names(CUSTOM_IND_CODES)[CUSTOM_IND_CODES == sel[i]][1] %||% sel[i]
+      tags$div(style = "flex:1; min-width:110px; max-width:180px; background:#f5f3ef; border-radius:8px; padding:8px 10px;",
+        tags$div(style = "font-size:0.68rem; font-weight:700; color:#444; margin-bottom:1px; line-height:1.3;", lbl),
+        tags$div(style = "font-size:0.55rem; color:#bbb; margin-bottom:6px;", sel[i]),
+        tags$input(id = paste0("bulk_cw_", i), type = "range",
+                   min = 0, max = 100, value = default_v, step = 1,
+                   style = "width:100%; cursor:pointer; accent-color:#1B1464; margin-bottom:4px;",
+                   onmousedown = sprintf("cwSnapshot('bulk',%d);", n),
+                   ontouchstart = sprintf("cwSnapshot('bulk',%d);", n),
+                   oninput = sprintf("cwSliderChanged('bulk',%d,parseFloat(this.value),%d);", i, n)),
+        tags$div(style = "display:flex; align-items:center; gap:4px;",
+          tags$input(id = paste0("bulk_cwn_", i), type = "number",
+                     min = 0, max = 100, value = default_v, step = 1,
+                     style = "width:44px; padding:2px 4px; border:1px solid #ddd; border-radius:4px; font-size:0.7rem; text-align:center; background:white;",
+                     oninput = sprintf("cwNumChanged('bulk',%d,parseFloat(this.value),%d);", i, n)),
+          tags$span(style = "font-size:0.65rem; color:#aaa;", "%"))
+      )
+    })
+    tagList(tags$div(style = "display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;", cards))
   })
   
   # Add org to portfolio
   observeEvent(input$port_add, {
-    amt  <- as.numeric(input$port_amount) %||% 0
-    if (amt <= 0) return()
+    amt <- as.numeric(input$port_amount %||% 0)
+    if (length(amt) == 0 || is.na(amt) || amt <= 0) return()
     prov <- input$port_prov; cat <- input$port_cat; disc <- input$port_disc
     yr   <- as.numeric(input$port_year)
     org_age <- as.numeric(input$port_org_age) %||% 10
@@ -531,6 +677,7 @@ server <- function(input, output, session) {
     new_row <- data.frame(
       id     = org_id,
       name   = org_name,
+      count  = 1,
       amount = amt,
       prov   = prov, cat = cat, disc = disc,
       yr     = yr, org_age = org_age,
@@ -567,7 +714,11 @@ server <- function(input, output, session) {
   
   # Conditional visibility
   output$port_has_orgs <- reactive(nrow(port_orgs()) > 0)
-  outputOptions(output, "port_has_orgs", suspendWhenHidden = FALSE)
+  outputOptions(output, "port_has_orgs",            suspendWhenHidden = FALSE)
+  outputOptions(output, "port_weight_ui",            suspendWhenHidden = FALSE)
+  outputOptions(output, "port_custom_weights_ui",    suspendWhenHidden = FALSE)
+  outputOptions(output, "bulk_weight_ui",            suspendWhenHidden = FALSE)
+  outputOptions(output, "bulk_custom_weights_ui",    suspendWhenHidden = FALSE)
   
   # Aggregate KPIs — current
   output$port_gdp_total <- renderText(paste0("$", comma(round(sum(port_orgs()$gdp_t, na.rm = TRUE)))))
@@ -688,18 +839,39 @@ server <- function(input, output, session) {
                             tags$tbody(code_rows)),
                  tags$div(style = "font-family:monospace; line-height:1.7;",
                           tags$b("Effective multipliers: "),
-                          paste0("GDP total=", round(m_eff$gdp_total[1], 4),
-                                 "  Jobs total=", round(m_eff$jobs_total[1], 3)),
+                          paste0("GDP: ", round(m_eff$gdp_direct[1], 4), " (direct) + ",
+                                 round(m_eff$gdp_indirect[1], 4), " (indirect) + ",
+                                 round(m_eff$gdp_induced[1], 4), " (induced) = ",
+                                 round(m_eff$gdp_total[1], 4), " total"),
                           tags$br(),
-                          tags$b(paste0(base_lbl, " impact: ")),
-                          paste0("$", comma(round(r$amount)), " \u00d7 ", round(m_eff$gdp_total[1], 4),
-                                 " = $", comma(round(r$gdp_t)), " GDP"),
+                          paste0("Jobs: ", round(m_eff$jobs_direct[1], 3), " + ",
+                                 round(m_eff$jobs_indirect[1], 3), " + ",
+                                 round(m_eff$jobs_induced[1], 3), " = ",
+                                 round(m_eff$jobs_total[1], 3), " total"),
+                          tags$br(), tags$br(),
+                          if (!is.null(d$count) && d$count > 1) tagList(
+                            tags$b(paste0(base_lbl, " per org: ")),
+                            paste0("$", comma(round(d$amt_per_org)), " \u00d7 ", d$count, " orgs = $", comma(round(r$amount)), " total"),
+                            tags$br()
+                          ),
+                          tags$b("GDP: "),
+                          paste0("$", comma(round(r$amount)), " \u00d7 ", round(m_eff$gdp_direct[1], 4),
+                                 " = $", comma(round(r$gdp_d)), " direct"),
                           tags$br(),
-                          paste0("  ($", comma(round(r$amount)), " / 1M) \u00d7 ", round(m_eff$jobs_total[1], 3),
+                          paste0("       $", comma(round(r$amount)), " \u00d7 ", round(m_eff$gdp_indirect[1], 4),
+                                 " = $", comma(round(r$gdp_i)), " indirect"),
+                          tags$br(),
+                          paste0("       $", comma(round(r$amount)), " \u00d7 ", round(m_eff$gdp_induced[1], 4),
+                                 " = $", comma(round(r$gdp_in)), " induced"),
+                          tags$br(),
+                          tags$b(paste0("       Total GDP = $", comma(round(r$gdp_t)))),
+                          tags$br(),
+                          tags$b("Jobs: "),
+                          paste0("($", comma(round(r$amount)), " / 1M) \u00d7 ", round(m_eff$jobs_total[1], 3),
                                  " = ", round(r$jobs_t, 2), " jobs"),
                           if (!is.na(r$pred_val)) tagList(
-                            tags$br(),
-                            tags$b(style = sprintf("color:%s;", GOLD), "Prediction: "),
+                            tags$br(), tags$br(),
+                            tags$b(style = sprintf("color:%s;", GOLD), "Next-year prediction: "),
                             paste0("$", comma(round(r$pred_val)), " \u00d7 ", round(m_eff$gdp_total[1], 4),
                                    " = $", comma(round(r$pred_gdp_t)), " GDP"))
                  ))

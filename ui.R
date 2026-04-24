@@ -4,10 +4,28 @@ ui <- page_fluid(
     base_font = font_google("Inter"), heading_font = font_google("Inter")
   ),
   
-  tags$head(tags$style(HTML(sprintf("
+  tags$head(
+    tags$style(HTML(paste0("
+    #top-nav {
+      position: sticky; top: 0; z-index: 1000;
+      background: ", NAVY, "; display: flex; align-items: center;
+      padding: 0 18px; gap: 4px; border-bottom: 1px solid rgba(255,255,255,0.12);
+      min-height: 44px;
+    }
+    #top-nav .nav-btn {
+      background: transparent; color: rgba(255,255,255,0.65);
+      border: none; border-bottom: 3px solid transparent;
+      padding: 10px 16px 7px; font-size: 0.72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      cursor: pointer; white-space: nowrap; transition: color .15s;
+    }
+    #top-nav .nav-btn:hover { color: ", WHITE, "; }
+    #top-nav .nav-btn.active { color: ", PINK, "; border-bottom-color: ", PINK, "; }
+    "))),
+    tags$style(HTML(sprintf("
     body { background: %s; }
     #filter-bar-wrap {
-      position: sticky; top: 0; z-index: 999;
+      position: sticky; top: 44px; z-index: 999;
     }
     .filter-bar {
       background: %s; padding: 10px 18px;
@@ -187,33 +205,35 @@ ui <- page_fluid(
       if (el) { el.value = ''; Shiny.setInputValue('port_name', ''); }
     });
     function _setTabButtonsLocked(locked) {
-      var faqBtn = document.getElementById('tab-faq-btn');
-      if (faqBtn) {
-        faqBtn.disabled = locked;
-        faqBtn.classList.toggle('tab-btn-locked', locked);
-      }
-      document.querySelectorAll('#faq-content button').forEach(function(btn) {
+      document.querySelectorAll('#model-content button').forEach(function(btn) {
         btn.disabled = locked;
         btn.classList.toggle('tab-btn-locked', locked);
       });
     }
     function switchTab(tab) {
-      if ($(document.body).hasClass('shiny-busy')) return;
-      document.getElementById('main-content').style.display    = tab === 'main' ? '' : 'none';
-      document.getElementById('faq-content').style.display     = tab === 'faq'  ? '' : 'none';
-      document.getElementById('filter-bar-wrap').style.display = tab === 'main' ? '' : 'none';
+      document.getElementById('main-content').style.display    = tab === 'main'  ? '' : 'none';
+      document.getElementById('model-content').style.display   = tab === 'model' ? '' : 'none';
+      document.getElementById('filter-bar-wrap').style.display = tab === 'main'  ? '' : 'none';
+      ['main', 'model'].forEach(function(t) {
+        var btn = document.getElementById('nav-btn-' + t);
+        if (btn) btn.className = t === tab ? 'nav-btn active' : 'nav-btn';
+      });
     }
     $(document).on('shiny:busy', function() { _setTabButtonsLocked(true); });
     $(document).on('shiny:idle', function() { _setTabButtonsLocked(false); });
   ")),
 
+  # ── TOP NAV ───────────────────────────────────────
+  div(id = "top-nav",
+      tags$button(id = "nav-btn-main",  class = "nav-btn active",
+                  onclick = "switchTab('main')",  "Economic Impact"),
+      tags$button(id = "nav-btn-model", class = "nav-btn",
+                  onclick = "switchTab('model')", "Model Your Impact"),
+),
+
   # ── FILTER BAR ────────────────────────────────────
   div(id = "filter-bar-wrap",
     div(class = "filter-bar",
-        tags$button(id = "tab-faq-btn", class = "clear-btn",
-                    onclick = "switchTab('faq')",
-                    style = "flex-shrink:0; margin-right:4px;",
-                    "Methodology & FAQ"),
         div(class = "org-count",
             div(class = "num", textOutput("fb_orgs", inline = TRUE)),
             div(class = "lab", "Orgs ",
@@ -287,133 +307,6 @@ ui <- page_fluid(
                                              onclick = "Shiny.setInputValue('per_capita', this.checked)"))),
                           leafletOutput("plot_map", height = "620px")))),
   
-  # ── PORTFOLIO IMPACT ────────────────────────────────────────────────────────
-  div(class = "sec-title", span(class = "highlight", "Model"), " Your Impact"),
-  tags$p(class = "sec-desc", style = "font-size:0.88rem; color:#555; margin:-8px 0 18px;",
-    "Estimate the economic footprint of one or more organizations using ", term("I-O Model", "I-O Model"), " ", term("multipliers", "Multiplier"), ". ",
-    "Add organizations one at a time to build a portfolio. The model multiplies each organization's ", term("Expenditures", "Expenditures"), " or ", term("Revenue", "Revenue"),
-    " by industry-specific multipliers to estimate ", term("Direct GDP", "Direct GDP"), ", ", term("Indirect GDP", "Indirect GDP"), ", and ", term("Induced GDP", "Induced GDP"),
-    ". The same can be done for Jobs. Because the ", term("I-O Model", "I-O Model"),
-    " is linear, multipliers can be blended across industries (", term("Mixture", "Mixture"), ") to reflect organizations that span multiple sectors. ",
-    "A next-year prediction of financials is also provided, trained on ", tags$strong("non-profit"), " data only."),
-  # Toggle row for portfolio
-  div(style = "display:flex; gap:16px; margin-bottom:14px;",
-      div(class = "sec-toggle-wrap",
-          div(class = "toggle-label", term("Multiplier")),
-          div(class = "sec-toggle-pill",
-              tags$button(id = "port_method_single_btn", class = "sec-active", type = "button",
-                          onclick = "
-                            var order=['single','mixture','custom'], btns={'single':'port_method_single_btn','mixture':'port_method_mix_btn','custom':'port_method_custom_btn'};
-                            var cur=this.className==='sec-active', next=cur?order[(order.indexOf('single')+1)%3]:'single';
-                            Object.keys(btns).forEach(function(k){document.getElementById(btns[k]).className=k===next?'sec-active':'';});
-                            Shiny.setInputValue('port_mult_method',next);", "Primary"),
-              tags$button(id = "port_method_mix_btn", class = "", type = "button",
-                          onclick = "
-                            var order=['single','mixture','custom'], btns={'single':'port_method_single_btn','mixture':'port_method_mix_btn','custom':'port_method_custom_btn'};
-                            var cur=this.className==='sec-active', next=cur?order[(order.indexOf('mixture')+1)%3]:'mixture';
-                            Object.keys(btns).forEach(function(k){document.getElementById(btns[k]).className=k===next?'sec-active':'';});
-                            Shiny.setInputValue('port_mult_method',next);", "Mixture"),
-              tags$button(id = "port_method_custom_btn", class = "", type = "button",
-                          onclick = "
-                            var order=['single','mixture','custom'], btns={'single':'port_method_single_btn','mixture':'port_method_mix_btn','custom':'port_method_custom_btn'};
-                            var cur=this.className==='sec-active', next=cur?order[(order.indexOf('custom')+1)%3]:'custom';
-                            Object.keys(btns).forEach(function(k){document.getElementById(btns[k]).className=k===next?'sec-active':'';});
-                            Shiny.setInputValue('port_mult_method',next);", "Custom"))),
-      div(class = "sec-toggle-wrap",
-          div(class = "toggle-label", "Base"),
-          div(class = "sec-toggle-pill",
-              tags$button(id = "port_base_exp_btn", class = "sec-active", type = "button",
-                          onclick = "var cur=document.getElementById('port_base_exp_btn').className==='sec-active'; document.getElementById('port_base_exp_btn').className=cur?'':'sec-active'; document.getElementById('port_base_rev_btn').className=cur?'sec-active':''; Shiny.setInputValue('port_base_metric',cur?'rev':'exp');
-                            document.getElementById('err_exp_img').style.display=cur?'none':''; document.getElementById('err_rev_img').style.display=cur?'':'none';", "Exp"),
-              tags$button(id = "port_base_rev_btn", class = "", type = "button",
-                          onclick = "var cur=document.getElementById('port_base_rev_btn').className==='sec-active'; document.getElementById('port_base_rev_btn').className=cur?'':'sec-active'; document.getElementById('port_base_exp_btn').className=cur?'sec-active':''; Shiny.setInputValue('port_base_metric',cur?'exp':'rev');
-                            document.getElementById('err_exp_img').style.display=cur?'':'none'; document.getElementById('err_rev_img').style.display=cur?'none':'';", "Rev")))),
-  div(class = "port-input-bar",
-      div(class = "fc-field", style = "min-width:160px;",
-          tags$label("Name (optional)"),
-          tags$input(id = "port_name", type = "text", value = "", placeholder = "e.g. My Theatre Co",
-                     style = "width:100%; padding:7px 10px; border:1px solid #ddd; border-radius:8px; font-size:0.82rem; background:white;",
-                     onchange = "Shiny.setInputValue('port_name', this.value)")),
-      div(class = "fc-field", uiOutput("port_amount_label")),
-      div(class = "fc-field",
-          tags$label("Province"),
-          selectInput("port_prov", NULL, choices = PROVINCES, selected = "ON")),
-      div(class = "fc-field",
-          tags$label("Organization Type"),
-          selectInput("port_cat", NULL, choices = CALC_CATEGORIES, selected = "Arts Organization")),
-      div(class = "fc-field",
-          tags$label("Discipline"),
-          selectInput("port_disc", NULL,
-                      choices = VALID_COMBOS_FULL %>% filter(Category == "Arts Organization") %>% pull(Discipline) %>% sort(),
-                      selected = "Performing Arts")),
-      div(class = "fc-field", style = "min-width:100px; flex:0.5;",
-          tags$label("Year"),
-          selectInput("port_year", NULL, choices = YEARS_CAPPED, selected = as.character(MAX_MULT_YEAR))),
-      div(class = "fc-field", style = "min-width:90px; flex:0.4;",
-          tags$label("Org Age (yrs)"),
-          numericInput("port_org_age", NULL, value = 10, min = 0, max = 200, step = 1)),
-      div(class = "fc-btn-wrap",
-          actionButton("port_add", "+ Add Org",
-                       style = sprintf("background:%s; color:%s; border:none; border-radius:8px; padding:10px 18px; font-weight:700; font-size:0.82rem; letter-spacing:0.3px; cursor:pointer; white-space:nowrap;", NAVY, WHITE)))),
-  div(id = "port_weight_wrap", style = "margin:-10px 0 14px; padding:0 20px;",
-      uiOutput("port_weight_ui"),
-      uiOutput("port_custom_weights_ui")),
-  conditionalPanel(condition = "output.port_has_orgs",
-                   fluidRow(class = "calc-row-equal", style = "display:flex; align-items:stretch; margin-bottom:18px;",
-                            column(4, div(class = "chart-card", style = sprintf("border-top:3px solid %s; height:100%%;", NAVY),
-                                          div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:8px;", "Portfolio ", term("GDP"), " Impact",
-                                              tags$span("ⓘ", id = "port_gdp_mult_info_btn",
-                                                        `data-bs-toggle` = "popover", `data-bs-placement` = "bottom",
-                                                        `data-bs-content` = "Multipliers are applied assuming the broader economy is unchanged. Removing this subsector would not materially shift the multipliers themselves. Results are indicative of scale, not counterfactual impact.",
-                                                        `data-bs-trigger` = "click",
-                                                        style = "cursor:pointer; font-size:0.6rem; color:rgba(0,0,0,0.35); font-weight:400; text-transform:none; letter-spacing:0; margin-left:3px;")),
-                                          div(style = sprintf("font-size:1.8rem; font-weight:800; color:%s; line-height:1;", NAVY), textOutput("port_gdp_total", inline = TRUE)),
-                                          div(style = "font-size:0.72rem; color:#aaa; margin-bottom:10px;", "total contribution"),
-                                          uiOutput("port_gdp_breakdown"),
-                                          hr(class = "dna-divider"),
-                                          uiOutput("port_gdp_leakage"))),
-                            column(4, div(class = "chart-card", style = sprintf("border-top:3px solid %s; height:100%%;", PINK),
-                                          div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:8px;", "Portfolio Jobs Supported"),
-                                          div(style = sprintf("font-size:1.8rem; font-weight:800; color:%s; line-height:1;", NAVY), textOutput("port_jobs_total", inline = TRUE)),
-                                          div(style = "font-size:0.72rem; color:#aaa; margin-bottom:10px;", "total jobs"),
-                                          uiOutput("port_jobs_breakdown"),
-                                          hr(class = "dna-divider"),
-                                          uiOutput("port_jobs_leakage"))),
-                            column(4, div(class = "chart-card", style = sprintf("border-top:3px solid %s; height:100%%;", GREEN),
-                                          div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:8px;", "Portfolio Summary & ", term("Prediction")),
-                                          uiOutput("port_summary_stats")))),
-                   div(class = "chart-card",
-                       div(style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;",
-                           h4(style = "margin:0;", strong("Organizations"), " in portfolio"),
-                           actionButton("port_clear", "Clear All",
-                                        style = "background:transparent; color:#bbb; border:1px solid #ddd; border-radius:6px; padding:5px 14px; font-size:0.72rem; font-weight:700; cursor:pointer;")),
-                       uiOutput("port_table")),
-                   div(style = "margin-top:8px;",
-                       tags$div(class = "accuracy-toggle",
-                                onclick = "var p=document.getElementById('accuracy_panel'); var a=document.getElementById('accuracy_arrow'); var h=document.getElementById('accuracy_hint');
-                     if(p.style.display==='none'){p.style.display='block';a.className='arrow open';h.textContent='Click to collapse';}else{p.style.display='none';a.className='arrow';h.textContent='Click to expand';}",
-                                tags$span(id = "accuracy_arrow", class = "arrow", "▸"), term("Prediction"), " Model Reliability",
-                                tags$span(id = "accuracy_hint", class = "toggle-hint", "Click to expand")),
-                       div(id = "accuracy_panel", style = "display:none;",
-                           fluidRow(
-                             column(6, div(class = "chart-card",
-                               h4(strong("How the model was built")),
-                               tags$p(style = "font-size:0.82rem; color:#444; margin-bottom:10px;",
-                                 "Two separate linear models were trained, one for expenditures and one for revenues. Both are trained exclusively on ", tags$strong("non-profit"), " arts and culture organizations and may not generalize to for-profit entities. Each predicts next-year totals from: the organization's value in the prior year, province, category, discipline, and age."),
-                               tags$p(style = "font-size:0.82rem; color:#444; margin-bottom:10px;",
-                                 "The training data covers Canadian arts organizations from the MASS dataset. Outliers beyond the 5th–95th percentile were trimmed before training to reduce leverage from extreme values."),
-                               tags$div(style = "background:#f7f7f5; border-radius:8px; padding:12px 16px; margin-bottom:10px;",
-                                 tags$div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:6px;", "Validation method"),
-                                 tags$p(style = "font-size:0.82rem; color:#444; margin:0;",
-                                   "100-iteration bootstrap. Each iteration trains on a random resample and tests on the held-out (out-of-bag) observations. The chart on the right shows average prediction error across all iterations, broken down by organization size.")),
-                               tags$div(style = "background:#f7f7f5; border-radius:8px; padding:12px 16px;",
-                                 tags$div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:6px;", "What the error means"),
-                                 tags$p(style = "font-size:0.82rem; color:#444; margin:0;",
-                                   "The ", term("MAE"), " is the typical gap between predicted and actual values. Larger organizations have higher absolute error")))),
-                             column(6, div(class = "chart-card", h4(strong("Prediction error (", term("MAE"), ")"), " by organization size"),
-                                           tags$img(id = "err_exp_img", src = "forecast/mae_exp.png", width = "100%", style = "border-radius:8px;"),
-                                           tags$img(id = "err_rev_img", src = "forecast/mae_rev.png", width = "100%", style = "border-radius:8px; display:none;"))))))),
-  
   # ── CITY EXPLORER ───────────────────────────────────────────────────────────
   div(class = "sec-title", span(class = "highlight", "City"), " Explorer"),
   p(class = "sec-desc", style = "font-size:0.88rem; color:#555; margin:-8px 0 18px;",
@@ -445,22 +338,210 @@ ui <- page_fluid(
 
   ), # end main-content
 
-  # ── METHODOLOGY & FAQ ───────────────────────────────────────────────────────
-  div(id = "faq-content", style = "display:none; padding:24px 8px;",
+  # ── MODEL YOUR IMPACT ───────────────────────────────────────────────────────
+  div(id = "model-content", style = "display:none; padding:24px 8px 48px;",
 
-    div(style = "display:flex; align-items:center; gap:14px; margin-bottom:28px;",
-        tags$button(class = "clear-btn", onclick = "switchTab('main')",
-                    style = sprintf("background:%s; color:%s; border-color:%s; font-size:0.7rem;", NAVY, WHITE, NAVY),
-                    "← Back to Dashboard"),
-        div(class = "sec-title", style = "margin:0;",
-            span(class = "highlight", "Methodology"), " & FAQ")),
+    div(class = "sec-title", span(class = "highlight", "Model"), " Your Impact"),
+    tags$p(class = "sec-desc", style = "font-size:0.88rem; color:#555; margin:-8px 0 20px;",
+      "Estimate the economic footprint of one or more organizations using ", term("I-O Model", "I-O Model"), " ", term("multipliers", "Multiplier"), ". ",
+      "The model multiplies each organization's ", term("Expenditures", "Expenditures"), " or ", term("Revenue", "Revenue"),
+      " by industry-specific multipliers to estimate ", term("Direct GDP", "Direct GDP"), ", ",
+      term("Indirect GDP", "Indirect GDP"), ", and ", term("Induced GDP", "Induced GDP"),
+      ". Because the ", term("I-O Model", "I-O Model"),
+      " is linear, multipliers can be blended across industries (", term("Mixture", "Mixture"), ") to reflect organizations that span multiple sectors."),
 
-    div(style = "display:grid; grid-template-columns:repeat(3,1fr); gap:16px;",
-        div(class = "chart-card", h4(strong("Placeholder 1")), p(style="color:#bbb;font-size:0.82rem;","Response 1")),
-        div(class = "chart-card", h4(strong("Placeholder 2")), p(style="color:#bbb;font-size:0.82rem;","Response 2")),
-        div(class = "chart-card", h4(strong("Placeholder 3")), p(style="color:#bbb;font-size:0.82rem;","Response 3")),
-        div(class = "chart-card", h4(strong("Placeholder 4")), p(style="color:#bbb;font-size:0.82rem;","Response 4")),
-        div(class = "chart-card", h4(strong("Placeholder 5")), p(style="color:#bbb;font-size:0.82rem;","Response 5")),
-        div(class = "chart-card", h4(strong("Placeholder 6")), p(style="color:#bbb;font-size:0.82rem;","Response 6")))
-  )
-)
+    tags$script(HTML("
+      function setMultMethod(prefix, m) {
+        var ids = {single: prefix+'_method_single_btn', mixture: prefix+'_method_mix_btn', custom: prefix+'_method_custom_btn'};
+        Object.keys(ids).forEach(function(k){ document.getElementById(ids[k]).className = k===m ? 'sec-active' : ''; });
+        Shiny.setInputValue(prefix+'_mult_method', m, {priority:'event'});
+      }
+      function resetMultMethod() { setMultMethod('port', 'single'); setMultMethod('bulk', 'single'); }
+      var cwSnap = {};
+      function cwSnapshot(prefix, n) {
+        for (var j = 1; j <= n; j++) {
+          var el = document.getElementById(prefix+'_cw_' + j);
+          cwSnap[prefix+'_'+j] = el ? (parseFloat(el.value) || 0) : 0;
+        }
+      }
+      function cwSync(prefix, changed, newVal, n) {
+        newVal = Math.min(100, Math.max(0, Math.round(newVal)));
+        var remaining = 100 - newVal;
+        var otherSnapTotal = 0;
+        for (var j = 1; j <= n; j++) { if (j !== changed) otherSnapTotal += (cwSnap[prefix+'_'+j] || 0); }
+        for (var j = 1; j <= n; j++) {
+          if (j === changed) continue;
+          var snap = cwSnap[prefix+'_'+j] || 0;
+          var v = otherSnapTotal > 0 ? Math.round((snap / otherSnapTotal) * remaining) : Math.round(remaining / (n - 1));
+          v = Math.max(0, Math.min(100, v));
+          document.getElementById(prefix+'_cw_' + j).value = v;
+          document.getElementById(prefix+'_cwn_' + j).value = v;
+          Shiny.setInputValue(prefix+'_cw_' + j, v);
+        }
+        document.getElementById(prefix+'_cw_' + changed).value = newVal;
+        document.getElementById(prefix+'_cwn_' + changed).value = newVal;
+        Shiny.setInputValue(prefix+'_cw_' + changed, newVal);
+      }
+      function cwSliderChanged(prefix, i, val, n) { cwSync(prefix, i, parseFloat(val), n); }
+      function cwNumChanged(prefix, i, val, n) { cwSnapshot(prefix, n); cwSync(prefix, i, parseFloat(val), n); }
+    ")),
+
+    # ── SIDE-BY-SIDE INPUT CARDS (always visible, equal height) ──────────────
+    div(style = "display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:stretch; margin-bottom:20px;",
+
+        # ── LEFT: One at a Time ───────────────────────────────────────────────
+        div(class = "chart-card", style = sprintf("border-top:3px solid %s; display:flex; flex-direction:column;", NAVY),
+            div(style = sprintf("font-size:0.7rem; font-weight:800; text-transform:uppercase; letter-spacing:0.6px; color:%s; margin-bottom:10px;", NAVY), "One at a Time"),
+            # toggles
+            div(style = "display:flex; gap:10px; align-items:center; margin-bottom:10px; flex-wrap:wrap;",
+                div(class = "sec-toggle-wrap",
+                    div(class = "toggle-label", term("Multiplier")),
+                    div(class = "sec-toggle-pill",
+                        tags$button(id = "port_method_single_btn", class = "sec-active", type = "button",
+                                    onclick = "setMultMethod('port','single');", "Primary"),
+                        tags$button(id = "port_method_mix_btn", class = "", type = "button",
+                                    onclick = "setMultMethod('port','mixture');", "Mixture"),
+                        tags$button(id = "port_method_custom_btn", class = "", type = "button",
+                                    onclick = "setMultMethod('port','custom');", "Custom"))),
+                div(class = "sec-toggle-wrap",
+                    div(class = "toggle-label", "Base"),
+                    div(class = "sec-toggle-pill",
+                        tags$button(id = "port_base_exp_btn", class = "sec-active", type = "button",
+                                    onclick = "var cur=document.getElementById('port_base_exp_btn').className==='sec-active'; document.getElementById('port_base_exp_btn').className=cur?'':'sec-active'; document.getElementById('port_base_rev_btn').className=cur?'sec-active':''; Shiny.setInputValue('port_base_metric',cur?'rev':'exp');
+                                      document.getElementById('err_exp_img').style.display=cur?'none':''; document.getElementById('err_rev_img').style.display=cur?'':'none';", "Exp"),
+                        tags$button(id = "port_base_rev_btn", class = "", type = "button",
+                                    onclick = "var cur=document.getElementById('port_base_rev_btn').className==='sec-active'; document.getElementById('port_base_rev_btn').className=cur?'':'sec-active'; document.getElementById('port_base_exp_btn').className=cur?'sec-active':''; Shiny.setInputValue('port_base_metric',cur?'exp':'rev');
+                                      document.getElementById('err_exp_img').style.display=cur?'':'none'; document.getElementById('err_rev_img').style.display=cur?'none':'';", "Rev")))),
+            div(id = "port_weight_wrap", style = "margin:-4px 0 8px;",
+                uiOutput("port_weight_ui"),
+                uiOutput("port_custom_weights_ui")),
+            div(style = "flex:1; display:flex; flex-direction:column; gap:10px;",
+                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Name (optional)"),
+                    tags$input(id = "port_name", type = "text", value = "", placeholder = "e.g. My Theatre Co",
+                               style = "width:100%; padding:7px 10px; border:1px solid #ddd; border-radius:8px; font-size:0.82rem; background:white; box-sizing:border-box;",
+                               onchange = "Shiny.setInputValue('port_name', this.value)")),
+                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Organization Type"),
+                    selectInput("port_cat", NULL, choices = CALC_CATEGORIES, selected = "Arts Organization", width = "100%")),
+                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Discipline"),
+                    selectInput("port_disc", NULL,
+                                choices = VALID_COMBOS_FULL %>% filter(Category == "Arts Organization") %>% pull(Discipline) %>% sort(),
+                                selected = "Performing Arts", width = "100%")),
+                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Province"),
+                    selectInput("port_prov", NULL, choices = PROVINCES, selected = "ON", width = "100%")),
+                div(style = "display:grid; grid-template-columns:1fr 1fr; gap:10px;",
+                    div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Year"),
+                        selectInput("port_year", NULL, choices = YEARS_CAPPED, selected = as.character(MAX_MULT_YEAR), width = "100%")),
+                    div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Org Age (yrs)"),
+                        numericInput("port_org_age", NULL, value = 10, min = 0, max = 200, step = 1, width = "100%"))),
+                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;",
+                               textOutput("port_amount_lbl", inline = TRUE)),
+                    numericInput("port_amount", NULL, value = 100000, min = 0, step = 1, width = "100%"))),
+            div(style = "margin-top:16px;",
+                actionButton("port_add", "+ Add to Portfolio",
+                             style = sprintf("width:100%%; background:%s; color:%s; border:none; border-radius:8px; padding:11px 0; font-weight:700; font-size:0.85rem; letter-spacing:0.3px; cursor:pointer;", NAVY, WHITE),
+                             onclick = "setTimeout(function(){ setMultMethod('port','single'); }, 300);"))),
+
+        # ── RIGHT: Group Entry ────────────────────────────────────────────────
+        div(class = "chart-card", style = sprintf("border-top:3px solid %s; display:flex; flex-direction:column;", PINK),
+            div(style = sprintf("font-size:0.7rem; font-weight:800; text-transform:uppercase; letter-spacing:0.6px; color:%s; margin-bottom:10px;", PINK), "Group Entry"),
+            # toggles
+            div(style = "display:flex; gap:10px; align-items:center; margin-bottom:10px; flex-wrap:wrap;",
+                div(class = "sec-toggle-wrap",
+                    div(class = "toggle-label", term("Multiplier")),
+                    div(class = "sec-toggle-pill",
+                        tags$button(id = "bulk_method_single_btn", class = "sec-active", type = "button",
+                                    onclick = "setMultMethod('bulk','single');", "Primary"),
+                        tags$button(id = "bulk_method_mix_btn", class = "", type = "button",
+                                    onclick = "setMultMethod('bulk','mixture');", "Mixture"),
+                        tags$button(id = "bulk_method_custom_btn", class = "", type = "button",
+                                    onclick = "setMultMethod('bulk','custom');", "Custom"))),
+                div(class = "sec-toggle-wrap",
+                    div(class = "toggle-label", "Base"),
+                    div(class = "sec-toggle-pill",
+                        tags$button(id = "bulk_base_exp_btn", class = "sec-active", type = "button",
+                                    onclick = "var cur=document.getElementById('bulk_base_exp_btn').className==='sec-active'; document.getElementById('bulk_base_exp_btn').className=cur?'':'sec-active'; document.getElementById('bulk_base_rev_btn').className=cur?'sec-active':''; Shiny.setInputValue('bulk_base_metric',cur?'rev':'exp');", "Exp"),
+                        tags$button(id = "bulk_base_rev_btn", class = "", type = "button",
+                                    onclick = "var cur=document.getElementById('bulk_base_rev_btn').className==='sec-active'; document.getElementById('bulk_base_rev_btn').className=cur?'':'sec-active'; document.getElementById('bulk_base_exp_btn').className=cur?'sec-active':''; Shiny.setInputValue('bulk_base_metric',cur?'exp':'rev');", "Rev")))),
+            div(id = "bulk_weight_wrap", style = "margin:-4px 0 8px;",
+                uiOutput("bulk_weight_ui"),
+                uiOutput("bulk_custom_weights_ui")),
+            div(style = "flex:1; display:flex; flex-direction:column; gap:10px;",
+                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Organization Type"),
+                    selectInput("bulk_cat", NULL, choices = CALC_CATEGORIES, selected = "Arts Organization", width = "100%")),
+                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Discipline"),
+                    selectInput("bulk_disc", NULL,
+                                choices = VALID_COMBOS_FULL %>% filter(Category == "Arts Organization") %>% pull(Discipline) %>% sort(),
+                                selected = "Performing Arts", width = "100%")),
+                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Province"),
+                    selectInput("bulk_prov", NULL, choices = PROVINCES, selected = "ON", width = "100%")),
+                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Year"),
+                    selectInput("bulk_year", NULL, choices = YEARS_CAPPED, selected = as.character(MAX_MULT_YEAR), width = "100%")),
+                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Number of Orgs"),
+                    numericInput("bulk_n", NULL, value = 10, min = 1, max = 10000, step = 1, width = "100%")),
+                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;",
+                               textOutput("bulk_amount_lbl", inline = TRUE)),
+                    numericInput("bulk_amount", NULL, value = 100000, min = 0, step = 1, width = "100%"))),
+            div(style = "margin-top:16px;",
+                actionButton("bulk_add", "+ Add Group",
+                             style = sprintf("width:100%%; background:%s; color:%s; border:none; border-radius:8px; padding:11px 0; font-weight:700; font-size:0.85rem; letter-spacing:0.3px; cursor:pointer;", PINK, WHITE),
+                             onclick = "setTimeout(function(){ setMultMethod('bulk','single'); }, 300);"))))
+
+    , # ── RESULTS ───────────────────────────────────────────────────────────
+    conditionalPanel(condition = "output.port_has_orgs", div(style = "display:block; width:100%;",
+                     div(style = "display:flex; width:100%; gap:18px; align-items:stretch; margin-bottom:18px;",
+                         div(class = "chart-card", style = sprintf("border-top:3px solid %s; flex:1;", NAVY),
+                             div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:8px;", "Portfolio ", term("GDP"), " Impact",
+                                 tags$span("ⓘ", id = "port_gdp_mult_info_btn",
+                                           `data-bs-toggle` = "popover", `data-bs-placement` = "bottom",
+                                           `data-bs-content` = "Multipliers are applied assuming the broader economy is unchanged. Removing this subsector would not materially shift the multipliers themselves. Results are indicative of scale, not counterfactual impact.",
+                                           `data-bs-trigger` = "click",
+                                           style = "cursor:pointer; font-size:0.6rem; color:rgba(0,0,0,0.35); font-weight:400; text-transform:none; letter-spacing:0; margin-left:3px;")),
+                             div(style = sprintf("font-size:1.8rem; font-weight:800; color:%s; line-height:1;", NAVY), textOutput("port_gdp_total", inline = TRUE)),
+                             div(style = "font-size:0.72rem; color:#aaa; margin-bottom:10px;", "total contribution"),
+                             uiOutput("port_gdp_breakdown"),
+                             hr(class = "dna-divider"),
+                             uiOutput("port_gdp_leakage")),
+                         div(class = "chart-card", style = sprintf("border-top:3px solid %s; flex:1;", PINK),
+                             div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:8px;", "Portfolio Jobs Supported"),
+                             div(style = sprintf("font-size:1.8rem; font-weight:800; color:%s; line-height:1;", NAVY), textOutput("port_jobs_total", inline = TRUE)),
+                             div(style = "font-size:0.72rem; color:#aaa; margin-bottom:10px;", "total jobs"),
+                             uiOutput("port_jobs_breakdown"),
+                             hr(class = "dna-divider"),
+                             uiOutput("port_jobs_leakage")),
+                         div(class = "chart-card", style = sprintf("border-top:3px solid %s; flex:1;", GREEN),
+                             div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:8px;", "Portfolio Summary & ", term("Prediction")),
+                             uiOutput("port_summary_stats"))),
+                     div(class = "chart-card", style = "margin-bottom:18px;",
+                         div(style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;",
+                             h4(style = "margin:0;", strong("Organizations"), " in portfolio"),
+                             actionButton("port_clear", "Clear All",
+                                          style = "background:transparent; color:#bbb; border:1px solid #ddd; border-radius:6px; padding:5px 14px; font-size:0.72rem; font-weight:700; cursor:pointer;")),
+                         uiOutput("port_table")),
+                     div(style = "margin-top:8px;",
+                         tags$div(class = "accuracy-toggle",
+                                  onclick = "var p=document.getElementById('accuracy_panel'); var a=document.getElementById('accuracy_arrow'); var h=document.getElementById('accuracy_hint');
+                       if(p.style.display==='none'){p.style.display='block';a.className='arrow open';h.textContent='Click to collapse';}else{p.style.display='none';a.className='arrow';h.textContent='Click to expand';}",
+                                  tags$span(id = "accuracy_arrow", class = "arrow", "▸"), term("Prediction"), " Model Reliability",
+                                  tags$span(id = "accuracy_hint", class = "toggle-hint", "Click to expand")),
+                         div(id = "accuracy_panel", style = "display:none;",
+                             fluidRow(
+                               column(6, div(class = "chart-card",
+                                 h4(strong("How the model was built")),
+                                 tags$p(style = "font-size:0.82rem; color:#444; margin-bottom:10px;",
+                                   "Two separate linear models were trained, one for expenditures and one for revenues. Both are trained exclusively on ", tags$strong("non-profit"), " arts and culture organizations and may not generalize to for-profit entities. Each predicts next-year totals from: the organization's value in the prior year, province, category, discipline, and age."),
+                                 tags$p(style = "font-size:0.82rem; color:#444; margin-bottom:10px;",
+                                   "The training data covers Canadian arts organizations from the MASS dataset. Outliers beyond the 5th–95th percentile were trimmed before training to reduce leverage from extreme values."),
+                                 tags$div(style = "background:#f7f7f5; border-radius:8px; padding:12px 16px; margin-bottom:10px;",
+                                   tags$div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:6px;", "Validation method"),
+                                   tags$p(style = "font-size:0.82rem; color:#444; margin:0;",
+                                     "100-iteration bootstrap. Each iteration trains on a random resample and tests on the held-out (out-of-bag) observations. The chart on the right shows average prediction error across all iterations, broken down by organization size.")),
+                                 tags$div(style = "background:#f7f7f5; border-radius:8px; padding:12px 16px;",
+                                   tags$div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:6px;", "What the error means"),
+                                   tags$p(style = "font-size:0.82rem; color:#444; margin:0;",
+                                     "The ", term("MAE"), " is the typical gap between predicted and actual values. Larger organizations have higher absolute error")))),
+                               column(6, div(class = "chart-card", h4(strong("Prediction error (", term("MAE"), ")"), " by organization size"),
+                                             tags$img(id = "err_exp_img", src = "forecast/mae_exp.png", width = "100%", style = "border-radius:8px;"),
+                                             tags$img(id = "err_rev_img", src = "forecast/mae_rev.png", width = "100%", style = "border-radius:8px; display:none;"))))))))
+
+  ) # end model-content
+) # end page_fluid
