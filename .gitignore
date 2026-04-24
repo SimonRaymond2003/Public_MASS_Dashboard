@@ -12,3 +12,6 @@ Full_Writing.Rmd
 Full_Writing.pdf
 SUT_data_auto/
 mass-culture-dashboard-data/
+.DS_Store
+MASS_data.R
+Public_MASS_Dashboard.Rproj

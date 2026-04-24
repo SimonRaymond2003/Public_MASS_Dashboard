@@ -882,41 +882,41 @@ server <- function(input, output, session) {
   # ── CITY EXPLORER ──────────────────────────────────────────────────────────
   city_fdata <- reactive({
     req(input$city_sel, input$city_sel != "")
+    cduid <- CD_CHOICES[input$city_sel]
+
+    # Filter business data to those in the selected Census Division
+    cd_biz <- business_cd_lookup[business_cd_lookup$CDUID == cduid, ]
+
     df <- get_org_data()
     df <- df %>%
-      filter(!is.na(`Postal Code`)) %>%
-      mutate(FSA = toupper(substr(gsub("[^A-Za-z0-9]", "", `Postal Code`), 1, 3)))
-    city_fsas <- fsa_city_sf$CFSAUID[fsa_city_sf$city == input$city_sel]
-    df <- df %>% filter(FSA %in% city_fsas)
+      semi_join(cd_biz, by = c("Business Number", "Year"))
+
     if (!is.null(input$sel_year) && input$sel_year != "") df <- df %>% filter(Year == as.numeric(input$sel_year))
     if (!is.null(input$sel_cat)  && input$sel_cat  != "") df <- df %>% filter(Category == input$sel_cat)
     if (!is.null(input$sel_disc) && input$sel_disc != "") df <- df %>% filter(Discipline == input$sel_disc)
-    
-    # Compute city-level impacts using LF shares
-    city_name <- input$city_sel
+
+    # Compute city-level impacts using 2021 Census CD employment shares
+    cd_share_val <- get_city_share(cduid)
     df <- df %>%
-      rowwise() %>%
       mutate(
-        city_share = get_city_share(city_name, ind_primary),
+        city_share          = cd_share_val,
         imp_gdp_city_total  = base_amt * gdp_wp_direct +
-          base_amt * gdp_wp_indirect * city_share +
-          base_amt * gdp_wp_induced  * city_share,
+          base_amt * gdp_wp_indirect * cd_share_val +
+          base_amt * gdp_wp_induced  * cd_share_val,
         imp_jobs_city_total = base_millions * jobs_wp_direct +
-          base_millions * jobs_wp_indirect * city_share +
-          base_millions * jobs_wp_induced  * city_share
-      ) %>%
-      ungroup()
+          base_millions * jobs_wp_indirect * cd_share_val +
+          base_millions * jobs_wp_induced  * cd_share_val
+      )
     df
   })
   
   output$city_kpi_panel <- renderUI({
     df    <- city_fdata()
-    n     <- n_distinct(df$`Business Number`)
-    gdp_wp   <- sum(df$imp_gdp_wp_total,    na.rm = TRUE)
-    gdp_city <- sum(df$imp_gdp_city_total,  na.rm = TRUE)
-    jobs_wp  <- sum(df$imp_jobs_wp_total,   na.rm = TRUE)
+    n         <- n_distinct(df$`Business Number`)
+    gdp_wp    <- sum(df$imp_gdp_wp_total,    na.rm = TRUE)
+    gdp_city  <- sum(df$imp_gdp_city_total,  na.rm = TRUE)
+    jobs_wp   <- sum(df$imp_jobs_wp_total,   na.rm = TRUE)
     jobs_city <- sum(df$imp_jobs_city_total, na.rm = TRUE)
-    n_fsa <- n_distinct(df$FSA)
     city_gdp_pct <- if (gdp_wp > 0) round(gdp_city / gdp_wp * 100, 1) else 0
     
     kpi_row <- function(label_content, value, col = NAVY, label_col = "#888") {
@@ -933,8 +933,7 @@ server <- function(input, output, session) {
         kpi_row(tagList(term("GDP"), " (", tags$span(class = "term-tip", `data-def` = paste0("Impact retained within ", input$city_sel, " — direct activity stays in the city; indirect/induced are scaled by the city's share of provincial employment."), paste0("Within ", input$city_sel)), ")"), paste0("$", comma(round(gdp_city))), PINK),
         kpi_row(tagList(term("Jobs"), " (", term("Within Province", "Within-Province"), ")"), comma(round(jobs_wp))),
         kpi_row(tagList(term("Jobs"), " (", tags$span(class = "term-tip", `data-def` = paste0("Jobs retained within ", input$city_sel, " — direct activity stays in the city; indirect/induced are scaled by the city's share of provincial employment."), paste0("Within ", input$city_sel)), ")"), comma(round(jobs_city)), PINK),
-        kpi_row(term("City Retention"), paste0(city_gdp_pct, "%"), GREEN),
-        kpi_row(tagList(term("FSA"), "s with Data"), n_fsa))
+        kpi_row(term("City Retention"), paste0(city_gdp_pct, "%"), GREEN))
   })
   
   output$city_math_panel <- renderUI({
@@ -967,7 +966,7 @@ server <- function(input, output, session) {
           tags$div(style = "font-size:0.7rem; color:#555; line-height:1.6;",
             paste0(input$city_sel, " has "),
             tags$b(style = sprintf("color:%s;", PINK), paste0(round(city_share_val * 100, 1), "%")),
-            " of provincial employment (Labour Force Survey).")),
+            " of provincial employment (2021 Census).")),
         # Step 3
         tags$div(style = "flex:1.5; min-width:280px;",
           tags$div(style = sprintf("font-weight:700; color:%s; font-size:0.75rem; margin-bottom:6px;", NAVY), 
@@ -982,67 +981,73 @@ server <- function(input, output, session) {
         "Note: Direct impact stays in the city. Indirect and induced impacts are distributed based on city's share of provincial employment."))
   })
   
+  # Aggregate all orgs by CD for the full-Canada map (respects global filters)
+  all_cd_data <- reactive({
+    df <- get_org_data()
+    if (!is.null(input$sel_year) && input$sel_year != "") df <- df %>% filter(Year == as.numeric(input$sel_year))
+    if (!is.null(input$sel_cat)  && input$sel_cat  != "") df <- df %>% filter(Category == input$sel_cat)
+    if (!is.null(input$sel_disc) && input$sel_disc != "") df <- df %>% filter(Discipline == input$sel_disc)
+
+    df %>%
+      inner_join(business_cd_lookup[, c("Business Number", "Year", "CDUID")],
+                 by = c("Business Number", "Year")) %>%
+      group_by(CDUID) %>%
+      summarise(
+        n          = n_distinct(`Business Number`),
+        gdp_total  = sum(imp_gdp_total,    na.rm = TRUE),
+        jobs_total = sum(imp_jobs_total,   na.rm = TRUE),
+        gdp_wp     = sum(imp_gdp_wp_total, na.rm = TRUE),
+        jobs_wp    = sum(imp_jobs_wp_total, na.rm = TRUE),
+        .groups    = "drop"
+      ) %>%
+      mutate(gdp_pct_wp = ifelse(gdp_total > 0, round(gdp_wp / gdp_total * 100, 1), 0))
+  })
+
+  # Build the full-Canada map once; city picker just teleports the view
   output$plot_city_map <- renderLeaflet({
-    req(input$city_sel, input$city_sel != "")
-    df <- city_fdata()
-    
-    fsa_data <- df %>%
-      group_by(FSA) %>%
-      summarise(n          = n_distinct(`Business Number`),
-                gdp_total  = sum(imp_gdp_total,       na.rm = TRUE),
-                jobs_total = sum(imp_jobs_total,      na.rm = TRUE),
-                gdp_wp     = sum(imp_gdp_wp_total,    na.rm = TRUE),
-                jobs_wp    = sum(imp_jobs_wp_total,   na.rm = TRUE),
-                gdp_city   = sum(imp_gdp_city_total,  na.rm = TRUE),
-                jobs_city  = sum(imp_jobs_city_total, na.rm = TRUE),
-                .groups = "drop") %>%
-      mutate(gdp_leaked = gdp_total - gdp_wp,
-             gdp_pct_wp = ifelse(gdp_total > 0, round(gdp_wp / gdp_total * 100, 1), 0))
-    
-    city_polys <- fsa_city_sf %>% filter(city == input$city_sel)
-    if (nrow(city_polys) == 0) return(NULL)
-    if (is.na(st_crs(city_polys)) || st_crs(city_polys)$epsg != 4326)
-      city_polys <- st_transform(city_polys, 4326)
-    
-    map_df <- city_polys %>%
-      left_join(fsa_data, by = c("CFSAUID" = "FSA")) %>%
-      mutate(across(c(n, gdp_total, jobs_total, gdp_wp, jobs_wp, gdp_city, jobs_city, gdp_leaked, gdp_pct_wp), ~replace_na(.x, 0)))
-    
-    gdp_range <- range(map_df$gdp_total, na.rm = TRUE)
-    if (gdp_range[1] == gdp_range[2]) gdp_range <- c(0, max(gdp_range[2], 1))
-    pal <- colorNumeric(palette = c("#d8d5cf","#6a5acd", NAVY), domain = gdp_range, na.color = "#e8e5e0")
-    
+    agg <- all_cd_data()
+
+    map_df <- cd_sf %>%
+      left_join(agg, by = "CDUID") %>%
+      mutate(across(c(n, gdp_total, jobs_total, gdp_wp, jobs_wp, gdp_pct_wp), ~replace_na(.x, 0)))
+
+    gdp_max <- max(map_df$gdp_total, 1)
+    pal <- colorNumeric(palette = c("#e8e5e0", "#6a5acd", NAVY),
+                        domain  = c(0, gdp_max), na.color = "#e8e5e0")
+
     labels <- sprintf(
       "<div style='font-family:Inter,sans-serif; font-size:13px;'>
         <b style='font-size:15px;'>%s</b><br>Organizations: %s<br><br>
         <b style='color:%s;'>GDP Impact</b><br>Total: $%s<br>Within Province: $%s (%s%%)<br>
-        <b style='color:%s;'>Within City: $%s</b><br><br>
-        <b style='color:%s;'>Jobs</b><br>Total: %s | Within City: %s</div>",
-      map_df$CFSAUID, comma(map_df$n), NAVY,
+        <b style='color:%s;'>Jobs</b><br>Total: %s</div>",
+      map_df$CDNAME, comma(map_df$n), NAVY,
       comma(round(map_df$gdp_total)), comma(round(map_df$gdp_wp)), map_df$gdp_pct_wp,
-      PINK, comma(round(map_df$gdp_city)),
-      PINK, comma(round(map_df$jobs_total)), round(map_df$jobs_city, 1)) %>% lapply(htmltools::HTML)
-    
-    bbox    <- st_bbox(city_polys)
-    xmin    <- unname(bbox["xmin"]); xmax <- unname(bbox["xmax"])
-    ymin    <- unname(bbox["ymin"]); ymax <- unname(bbox["ymax"])
-    pad_lng <- (xmax - xmin) * 0.10
-    pad_lat <- (ymax - ymin) * 0.10
-    
-    leaflet(map_df, options = leafletOptions(minZoom = 9, maxZoom = 15, scrollWheelZoom = FALSE)) %>%
+      PINK, comma(round(map_df$jobs_total))) %>% lapply(htmltools::HTML)
+
+    leaflet(map_df, options = leafletOptions(minZoom = 3, maxZoom = 15, scrollWheelZoom = TRUE)) %>%
       addProviderTiles(providers$CartoDB.PositronNoLabels,   options = providerTileOptions(opacity = 0.6)) %>%
       addProviderTiles(providers$CartoDB.PositronOnlyLabels, options = providerTileOptions(opacity = 0.4)) %>%
-      fitBounds(lng1 = xmin - pad_lng, lat1 = ymin - pad_lat,
-                lng2 = xmax + pad_lng, lat2 = ymax + pad_lat) %>%
-      addPolygons(fillColor = ~pal(gdp_total), fillOpacity = 0.65,
-                  weight = 1.5, color = "#ffffff", opacity = 0.9,
-                  highlightOptions = highlightOptions(weight = 3, color = PINK, fillOpacity = 0.8, bringToFront = TRUE),
-                  label = labels,
-                  labelOptions = labelOptions(
-                    style    = list("padding" = "10px 14px", "border-radius" = "8px",
-                                    "background-color" = "white", "box-shadow" = "0 2px 8px rgba(0,0,0,0.15)", "border" = "none"),
-                    textsize = "13px", direction = "auto")) %>%
+      setView(lng = -96, lat = 60, zoom = 4) %>%
+      addPolygons(
+        layerId       = ~CDUID,
+        fillColor     = ~pal(gdp_total), fillOpacity = 0.65,
+        weight = 1, color = "#ffffff", opacity = 0.7,
+        highlightOptions = highlightOptions(weight = 2.5, color = PINK, fillOpacity = 0.85, bringToFront = TRUE),
+        label         = labels,
+        labelOptions  = labelOptions(
+          style   = list("padding" = "10px 14px", "border-radius" = "8px",
+                         "background-color" = "white", "box-shadow" = "0 2px 8px rgba(0,0,0,0.15)", "border" = "none"),
+          textsize = "13px", direction = "auto")) %>%
       addLegend(position = "bottomright", pal = pal, values = ~gdp_total,
                 title = "GDP Impact", labFormat = labelFormat(prefix = "$", big.mark = ","), opacity = 0.8)
+  })
+
+  # Teleport to the selected city without rebuilding the map
+  observe({
+    req(input$city_sel, input$city_sel != "")
+    coords <- CITY_COORDS[[input$city_sel]]
+    req(coords)
+    leafletProxy("plot_city_map") %>%
+      setView(lng = coords$lng, lat = coords$lat, zoom = coords$zoom)
   })
 }

@@ -243,58 +243,55 @@ mult_toggle_ui <- function(id, label_single = "Primary Multiplier", label_mix = 
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 9. FSA CITY DATA
+# 9. CENSUS DIVISION SPATIAL DATA
 # ══════════════════════════════════════════════════════════════════════════════
 
-fsa_city_sf <- readRDS("non-updating_data/fsa_city_sf.rds")
-fsa_city_sf <- st_transform(fsa_city_sf, 4326)
+cd_sf <- readRDS("non-updating_data/cd_sf.rds")
+cd_sf <- st_transform(cd_sf, 4326)
+
+# Business → CD lookup (produced by updating_scripts/CD_business_lookup.R)
+business_cd_lookup <- fread("updating_data/business_cd_lookup.csv",
+                             colClasses = c(CDUID = "character"))
+
+# Curated subset of Census Divisions shown in the city explorer tab.
+# CDUIDs sourced from 2021 Census; display names match common usage.
+# (Calgary = AB Div 6, Edmonton = AB Div 11, Winnipeg = MB Div 11,
+#  Saskatoon = SK Div 11, Regina = SK Div 6)
+CD_CHOICES <- c(
+  "Toronto"         = "3520",
+  "Montréal"        = "2466",
+  "Vancouver"       = "5915",
+  "Calgary"         = "4806",
+  "Edmonton"        = "4811",
+  "Ottawa"          = "3506",
+  "Winnipeg"        = "4611",
+  "Québec City"     = "2423",
+  "Halifax"         = "1209",
+  "Victoria"        = "5917"
+)
 
 CITY_COORDS <- list(
-  "Toronto"            = list(lng = -79.38, lat = 43.70, zoom = 11),
-  "Montreal"           = list(lng = -73.57, lat = 45.50, zoom = 11),
-  "Vancouver"          = list(lng = -123.12, lat = 49.25, zoom = 11),
-  "Ottawa-Gatineau"    = list(lng = -75.70, lat = 45.42, zoom = 11),
-  "Calgary"            = list(lng = -114.07, lat = 51.05, zoom = 11),
-  "Edmonton"           = list(lng = -113.49, lat = 53.55, zoom = 11),
-  "Winnipeg"           = list(lng = -97.14, lat = 49.90, zoom = 11),
-  "Quebec City"        = list(lng = -71.21, lat = 46.81, zoom = 11),
-  "Hamilton"           = list(lng = -79.87, lat = 43.25, zoom = 11),
-  "Kitchener-Waterloo" = list(lng = -80.49, lat = 43.45, zoom = 11),
-  "London"             = list(lng = -81.25, lat = 42.98, zoom = 11),
-  "Halifax"            = list(lng = -63.57, lat = 44.65, zoom = 11),
-  "Victoria"           = list(lng = -123.37, lat = 48.43, zoom = 11),
-  "Saskatoon"          = list(lng = -106.67, lat = 52.13, zoom = 12),
-  "Regina"             = list(lng = -104.62, lat = 50.45, zoom = 12)
+  "Toronto"     = list(lng = -79.38, lat = 43.70, zoom = 15),
+  "Montréal"    = list(lng = -73.57, lat = 45.50, zoom = 15),
+  "Vancouver"   = list(lng = -123.12, lat = 49.25, zoom = 15),
+  "Calgary"     = list(lng = -114.07, lat = 51.05, zoom = 15),
+  "Edmonton"    = list(lng = -113.49, lat = 53.55, zoom = 15),
+  "Ottawa"      = list(lng = -75.70,  lat = 45.42, zoom = 15),
+  "Winnipeg"    = list(lng = -97.14,  lat = 49.90, zoom = 15),
+  "Québec City" = list(lng = -71.21,  lat = 46.81, zoom = 15),
+  "Halifax"     = list(lng = -63.57,  lat = 44.65, zoom = 15),
+  "Victoria"    = list(lng = -123.37, lat = 48.43, zoom = 15)
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 10. CITY LABOUR FORCE SHARES (for municipal impact splitting)
+# 10. CENSUS DIVISION EMPLOYMENT SHARES (2021 Census, for impact splitting)
 # ══════════════════════════════════════════════════════════════════════════════
 
-city_ovr_shares <- fread("updating_data/city_overall_shares.csv")
+cd_ovr_shares <- fread("updating_data/cd_overall_shares.csv",
+                        colClasses = c(CDUID = "character"))
 
-app_city_to_cma <- c(
-  "Toronto"                          = "Toronto, Ontario",
-  "Montréal"                         = "Montréal, Quebec",
-  "Vancouver"                        = "Vancouver, British Columbia",
-  "Ottawa - Gatineau"                = "Ottawa-Gatineau, Ontario/Quebec",
-  "Calgary"                          = "Calgary, Alberta",
-  "Edmonton"                         = "Edmonton, Alberta",
-  "Winnipeg"                         = "Winnipeg, Manitoba",
-  "Québec"                           = "Québec, Quebec",
-  "Hamilton"                         = "Hamilton, Ontario",
-  "Kitchener - Cambridge - Waterloo" = "Kitchener-Cambridge-Waterloo, Ontario",
-  "London"                           = "London, Ontario",
-  "Halifax"                          = "Halifax, Nova Scotia",
-  "Victoria"                         = "Victoria, British Columbia",
-  "Saskatoon"                        = "Saskatoon, Saskatchewan",
-  "Regina"                           = "Regina, Saskatchewan"
-)
-
-get_city_share <- function(city_name, ind_code = NULL) {
-  cma_name <- app_city_to_cma[city_name]
-  if (is.na(cma_name)) return(0)
-  share <- city_ovr_shares[cma == cma_name, overall_share]
+get_city_share <- function(cduid, ind_code = NULL) {
+  share <- cd_ovr_shares[CDUID == cduid, cd_share]
   if (length(share) > 0 && !is.na(share[1])) return(share[1])
   return(0)
 }
@@ -315,11 +312,11 @@ TERMS <- list(
   "Within-Province" = "Impact retained inside the organization's home province, excluding economic activity that leaks to other provinces.",
   "Leakage" = "The share of impact that flows out to other provinces via out-of-province supply chains. Indirect and induced impacts alone drive leakage.",
   "I-O Model" = "Input-Output model, first developed by economist Wassily Leontief tracks how every industry buys from and sells to every other industry, then uses those links to estimate how much GDP and how many jobs a dollar of spending creates across the whole economy.",  
-  "FSA" = "Forward Sortation Area — the first 3 characters of a Canadian postal code, used to assign organizations to geographic areas.",
+  "Census Division" = "A geographic region defined by Statistics Canada, roughly corresponding to counties or regional municipalities. Used here to assign organizations to local areas.",
   "Per Capita" = "Divided by population.",
   "Expenditures" = "Total spending by an organization, used as a base amount for impact calculations.",
   "Revenue" = "Total income received by an organization, used as a base for impact calculations.",
-  "Employment Share" = "Proportion of a province's labour force located within the selected city.",
+  "Employment Share" = "Proportion of a province's labour force located within the selected Census Division (2021 Census).",
   "Primary" = "Uses a single industry multiplier based on the organization's main activity code.",
   "Mixture" = "Weights multiple industry multipliers equally for organizations that span several sectors.",
   "Industry Code" = "StatCan I-O classification (e.g., BS71A000) identifying the industry whose multipliers apply.",

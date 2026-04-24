@@ -16,12 +16,14 @@ shinyApp(ui, server)
 # add names for stats canada multipliers in selecting custom
 # explain jobs direct vs ind/induced etc 
 # does CSA classify jobs differently
-# need to fix the mixed weight slider
 # need to be able to clear the multipliers cleaner
+# need to be able to add 
+
+# population data needs to be automatic
 
 #### seperate tab ####
 
-# input multiple at a time and one at a time
+# input multiple at a time needs to be improved
 
 
 # General Notes
@@ -31,5 +33,4 @@ shinyApp(ui, server)
 # categorize who uses csa
 # assumptions about applying th emultipliers
 
-# Remove expenditures predictions?
 
