@@ -5,6 +5,8 @@ library(stringr)
 library(cansim)
 library(data.table)
 
+options(timeout = 600)
+
 # =============================================================================
 # SUB-DOMAIN → CONSTITUENT IOIC INDUSTRIES
 # (from StatCan CSA methodology Table 1)
@@ -87,24 +89,78 @@ cat("Mapping rows:", nrow(subdomain_ioic), "\n")
 cat("Unique IOIC codes:", length(unique(subdomain_ioic$ioic_code)), "\n")
 
 # =============================================================================
-# STEP 1: Load SUT output data (for industry size weights)
+# STEP 1: Download SUT files for all available years, load output weights
 # =============================================================================
 
-dat <- read_csv("SUT_data/SUT_C2021_D.csv", show_col_types = FALSE)
 extract_code <- function(x) str_extract(x, "\\[([A-Z0-9_]+)\\]", group = 1)
-is_producing <- function(x) grepl("\\[BS|\\[NP|\\[GS", x)
+is_producing  <- function(x) grepl("\\[BS|\\[NP|\\[GS", x)
 
-sut_output <- dat %>%
-  filter(`Supply and use` == "Supply", Valuation == "Basic price",
-         is_producing(Industry), extract_code(Product) != "TOTAL") %>%
-  group_by(GEO, Industry) %>%
-  summarise(output = sum(VALUE, na.rm = TRUE), .groups = "drop") %>%
-  filter(output > 0) %>%
-  mutate(code = extract_code(Industry)) %>%
-  select(geo = GEO, code, output)
+sut_cache_dir <- "SUT_data_auto/15602x"
+dir.create(sut_cache_dir, showWarnings = FALSE, recursive = TRUE)
 
+sut_base_url <- "https://www150.statcan.gc.ca/pub/15-602-x/2017001/csv/15-602-x_csv-scsv_"
+sut_years    <- 2010:as.integer(format(Sys.Date(), "%Y"))
+
+sut_output_by_year <- list()
+
+for (y in sut_years) {
+  ydir      <- file.path(sut_cache_dir, y)
+  keep_name <- paste0("SUT_C", y, "_D.csv")
+  keep_path <- file.path(ydir, keep_name)
+
+  if (!file.exists(keep_path)) {
+    dir.create(ydir, showWarnings = FALSE, recursive = TRUE)
+    zf <- file.path(ydir, paste0(y, ".zip"))
+
+    if (!file.exists(zf)) {
+      ok <- tryCatch({
+        download.file(paste0(sut_base_url, y, "_eng.zip"), zf, mode = "wb", quiet = TRUE)
+        TRUE
+      }, error = function(e) FALSE, warning = function(w) FALSE)
+      if (!ok || !file.exists(zf) || file.size(zf) < 1000) {
+        if (file.exists(zf)) file.remove(zf)
+        unlink(ydir, recursive = TRUE)
+        message("SUT ", y, ": not available, skipping")
+        next
+      }
+    }
+
+    unzip(zf, exdir = ydir)
+
+    found <- list.files(ydir, pattern = paste0("^", keep_name, "$"),
+                        recursive = TRUE, full.names = TRUE)
+    if (length(found)) {
+      src <- normalizePath(found[1], mustWork = FALSE)
+      kp  <- normalizePath(keep_path, mustWork = FALSE)
+      if (src != kp) file.copy(src, kp, overwrite = TRUE)
+    }
+
+    all_files <- normalizePath(list.files(ydir, recursive = TRUE, full.names = TRUE),
+                               mustWork = FALSE)
+    file.remove(setdiff(all_files,
+                        c(normalizePath(keep_path, mustWork = FALSE),
+                          normalizePath(zf, mustWork = FALSE))))
+    unlink(list.dirs(ydir, recursive = FALSE), recursive = TRUE)
+  }
+
+  if (!file.exists(keep_path)) { message("SUT ", y, ": file missing after unzip, skipping"); next }
+
+  message("SUT ", y, ": loading...")
+  dat <- fread(keep_path)
+  sut_output_by_year[[as.character(y)]] <- dat[
+    `Supply and use` == "Supply" & Valuation == "Basic price" &
+      grepl("\\[BS|\\[NP|\\[GS", Industry) &
+      extract_code(Product) != "TOTAL",
+  ][, .(output = sum(VALUE, na.rm = TRUE)), by = .(geo = GEO, Industry)
+  ][output > 0
+  ][, code := extract_code(Industry)
+  ][, .(geo, code, output)]
+  rm(dat); gc(verbose = FALSE)
+}
+
+sut_years_avail <- names(sut_output_by_year)
 cat("\n=== SUT OUTPUT ===\n")
-cat("Rows:", nrow(sut_output), "| Industries:", length(unique(sut_output$code)), "\n")
+cat("Years loaded:", paste(sort(sut_years_avail), collapse = ", "), "\n")
 
 # =============================================================================
 # STEP 2: Load multiplier tables (GDP + Jobs)
@@ -174,7 +230,7 @@ compute_baseline <- function(subdomain_ioic_df, output_df,
                              gdp_mult_df, jobs_mult_df,
                              geo_val = NULL, coverage_val = NULL,
                              year_val) {
-  # SUT output for weighting
+  # output_df: already for the correct year — just filter by geo
   if (is.null(geo_val)) {
     out <- output_df %>% filter(geo == "Canada")
   } else {
@@ -357,11 +413,12 @@ build_splits <- function(csa_df, baseline) {
 # STEP 6: NATIONAL SPLITS
 # =============================================================================
 
-nat_years <- intersect(unique(nat_gdp$year), unique(csa_nat$year))
+nat_years <- intersect(intersect(unique(nat_gdp$year), unique(csa_nat$year)), sut_years_avail)
 cat("\n=== NATIONAL: years:", sort(nat_years), "===\n")
 
 nat_splits <- lapply(nat_years, function(yr) {
-  bl <- compute_baseline(subdomain_ioic, sut_output, nat_gdp, nat_jobs,
+  bl <- compute_baseline(subdomain_ioic, as.data.frame(sut_output_by_year[[yr]]),
+                         nat_gdp, nat_jobs,
                          geo_val = NULL, coverage_val = NULL, year_val = yr)
   csa_sub <- csa_nat %>% filter(year == yr)
   result <- build_splits(csa_sub, bl)
@@ -379,15 +436,16 @@ prov_provs <- setdiff(unique(as.character(prov_gdp$geo)),
                       "Canadian territorial enclaves abroad")
 ptci_provs <- setdiff(unique(csa_prov$geo), c("Canada", "Outside Canada"))
 common_provs <- intersect(prov_provs, ptci_provs)
-prov_years <- intersect(unique(prov_gdp$year), unique(csa_prov$year))
+prov_years <- intersect(intersect(unique(prov_gdp$year), unique(csa_prov$year)), sut_years_avail)
 
 cat("\n=== PROVINCIAL: years:", sort(prov_years), "===\n")
 cat("Provinces:", length(common_provs), "\n")
 
 prov_splits <- lapply(prov_years, function(yr) {
+  sut_yr <- as.data.frame(sut_output_by_year[[yr]])
   lapply(common_provs, function(pv) {
     lapply(c("Within province", "All provinces"), function(cov) {
-      bl <- compute_baseline(subdomain_ioic, sut_output, prov_gdp, prov_jobs,
+      bl <- compute_baseline(subdomain_ioic, sut_yr, prov_gdp, prov_jobs,
                              geo_val = pv, coverage_val = cov, year_val = yr)
       csa_sub <- csa_prov %>% filter(year == yr, geo == pv)
       result <- build_splits(csa_sub, bl)
@@ -430,7 +488,8 @@ all_splits %>%
 
 # Show baseline vs CSA-adjusted direct for comparison
 cat("\n=== BASELINE vs CSA DIRECT — NATIONAL 2021 ===\n")
-bl_nat_2021 <- compute_baseline(subdomain_ioic, sut_output, nat_gdp, nat_jobs,
+bl_nat_2021 <- compute_baseline(subdomain_ioic, as.data.frame(sut_output_by_year[["2021"]]),
+                                nat_gdp, nat_jobs,
                                 geo_val = NULL, coverage_val = NULL, year_val = "2021")
 comparison <- all_splits %>%
   filter(year == "2021", geo == "Canada") %>%

@@ -16,8 +16,6 @@ shinyApp(ui, server)
 # add names for stats canada multipliers in selecting custom
 # explain jobs direct vs ind/induced etc 
 # does CSA classify jobs differently
-# need sut data for each year.. downloadable?
-# sut update etc 
 # need to fix the mixed weight slider
 # need to be able to clear the multipliers cleaner
 

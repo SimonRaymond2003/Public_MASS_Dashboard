@@ -10,7 +10,7 @@ library(dplyr)
 
 # ── 1. LOAD & PREP ──────────────────────────────────────────────────────────
 
-raw <- read_excel("non-updating_data/SIMON - 2025-10-24-MASS-Culture-Data-Summary-Real_Dollars.xlsx")
+raw <- read_excel("MASS_data/SIMON - 2025-10-24-MASS-Culture-Data-Summary-Real_Dollars.xlsx")
 
 df <- raw %>%
   select(
