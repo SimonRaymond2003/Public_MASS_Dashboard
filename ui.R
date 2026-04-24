@@ -78,13 +78,6 @@ ui <- page_fluid(
     .math-box .row-head { font-weight:700; color:%s; }
     .calc-row-equal > div[class^='col'] { display:flex; flex-direction:column; }
     .calc-row-equal > div[class^='col'] > div { flex:1; }
-    .accuracy-toggle { cursor:pointer; font-size:0.88rem; font-weight:700; color:#777;
-      display:flex; align-items:center; gap:10px; margin:20px 0 12px; user-select:none;
-      padding:16px 24px; background:%s; border-radius:12px; border:1.5px solid #ddd; transition:all 0.2s; }
-    .accuracy-toggle:hover { background:#eeecea; color:%s; border-color:#ccc; }
-    .accuracy-toggle .arrow { transition:transform 0.2s; display:inline-block; font-size:0.7rem; }
-    .accuracy-toggle .arrow.open { transform:rotate(90deg); }
-    .accuracy-toggle .toggle-hint { font-weight:400; color:#bbb; font-size:0.75rem; margin-left:auto; }
     .fc-btn-wrap { flex-shrink:0; }
     .port-input-bar { display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap;
       padding:16px 20px; background:%s; border-radius:10px; margin-bottom:16px; }
@@ -170,7 +163,7 @@ ui <- page_fluid(
       opacity: 1;
       visibility: visible;
     }
-  ", CREAM, NAVY, WHITE, PINK, WHITE, WHITE, WHITE, PINK, NAVY, WHITE, NAVY, WHITE, NAVY, WHITE, NAVY)))),
+  ", CREAM, NAVY, WHITE, PINK, WHITE, WHITE, WHITE, PINK, NAVY, WHITE, NAVY, WHITE, NAVY)))),
 
   tags$style(HTML(".tab-btn-locked { opacity:0.45 !important; cursor:not-allowed !important; pointer-events:none !important; }")),
 
@@ -407,11 +400,9 @@ ui <- page_fluid(
                     div(class = "toggle-label", "Base"),
                     div(class = "sec-toggle-pill",
                         tags$button(id = "port_base_exp_btn", class = "sec-active", type = "button",
-                                    onclick = "var cur=document.getElementById('port_base_exp_btn').className==='sec-active'; document.getElementById('port_base_exp_btn').className=cur?'':'sec-active'; document.getElementById('port_base_rev_btn').className=cur?'sec-active':''; Shiny.setInputValue('port_base_metric',cur?'rev':'exp');
-                                      document.getElementById('err_exp_img').style.display=cur?'none':''; document.getElementById('err_rev_img').style.display=cur?'':'none';", "Exp"),
+                                    onclick = "var cur=document.getElementById('port_base_exp_btn').className==='sec-active'; document.getElementById('port_base_exp_btn').className=cur?'':'sec-active'; document.getElementById('port_base_rev_btn').className=cur?'sec-active':''; Shiny.setInputValue('port_base_metric',cur?'rev':'exp');", "Exp"),
                         tags$button(id = "port_base_rev_btn", class = "", type = "button",
-                                    onclick = "var cur=document.getElementById('port_base_rev_btn').className==='sec-active'; document.getElementById('port_base_rev_btn').className=cur?'':'sec-active'; document.getElementById('port_base_exp_btn').className=cur?'sec-active':''; Shiny.setInputValue('port_base_metric',cur?'exp':'rev');
-                                      document.getElementById('err_exp_img').style.display=cur?'':'none'; document.getElementById('err_rev_img').style.display=cur?'none':'';", "Rev")))),
+                                    onclick = "var cur=document.getElementById('port_base_rev_btn').className==='sec-active'; document.getElementById('port_base_rev_btn').className=cur?'':'sec-active'; document.getElementById('port_base_exp_btn').className=cur?'sec-active':''; Shiny.setInputValue('port_base_metric',cur?'exp':'rev');", "Rev")))),
             div(id = "port_weight_wrap", style = "margin:-4px 0 8px;",
                 uiOutput("port_weight_ui"),
                 uiOutput("port_custom_weights_ui")),
@@ -509,39 +500,14 @@ ui <- page_fluid(
                              hr(class = "dna-divider"),
                              uiOutput("port_jobs_leakage")),
                          div(class = "chart-card", style = sprintf("border-top:3px solid %s; flex:1;", GREEN),
-                             div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:8px;", "Portfolio Summary & ", term("Prediction")),
+                             div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:8px;", "Portfolio Summary"),
                              uiOutput("port_summary_stats"))),
                      div(class = "chart-card", style = "margin-bottom:18px;",
                          div(style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;",
                              h4(style = "margin:0;", strong("Organizations"), " in portfolio"),
                              actionButton("port_clear", "Clear All",
                                           style = "background:transparent; color:#bbb; border:1px solid #ddd; border-radius:6px; padding:5px 14px; font-size:0.72rem; font-weight:700; cursor:pointer;")),
-                         uiOutput("port_table")),
-                     div(style = "margin-top:8px;",
-                         tags$div(class = "accuracy-toggle",
-                                  onclick = "var p=document.getElementById('accuracy_panel'); var a=document.getElementById('accuracy_arrow'); var h=document.getElementById('accuracy_hint');
-                       if(p.style.display==='none'){p.style.display='block';a.className='arrow open';h.textContent='Click to collapse';}else{p.style.display='none';a.className='arrow';h.textContent='Click to expand';}",
-                                  tags$span(id = "accuracy_arrow", class = "arrow", "▸"), term("Prediction"), " Model Reliability",
-                                  tags$span(id = "accuracy_hint", class = "toggle-hint", "Click to expand")),
-                         div(id = "accuracy_panel", style = "display:none;",
-                             fluidRow(
-                               column(6, div(class = "chart-card",
-                                 h4(strong("How the model was built")),
-                                 tags$p(style = "font-size:0.82rem; color:#444; margin-bottom:10px;",
-                                   "Two separate linear models were trained, one for expenditures and one for revenues. Both are trained exclusively on ", tags$strong("non-profit"), " arts and culture organizations and may not generalize to for-profit entities. Each predicts next-year totals from: the organization's value in the prior year, province, category, discipline, and age."),
-                                 tags$p(style = "font-size:0.82rem; color:#444; margin-bottom:10px;",
-                                   "The training data covers Canadian arts organizations from the MASS dataset. Outliers beyond the 5th–95th percentile were trimmed before training to reduce leverage from extreme values."),
-                                 tags$div(style = "background:#f7f7f5; border-radius:8px; padding:12px 16px; margin-bottom:10px;",
-                                   tags$div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:6px;", "Validation method"),
-                                   tags$p(style = "font-size:0.82rem; color:#444; margin:0;",
-                                     "100-iteration bootstrap. Each iteration trains on a random resample and tests on the held-out (out-of-bag) observations. The chart on the right shows average prediction error across all iterations, broken down by organization size.")),
-                                 tags$div(style = "background:#f7f7f5; border-radius:8px; padding:12px 16px;",
-                                   tags$div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:6px;", "What the error means"),
-                                   tags$p(style = "font-size:0.82rem; color:#444; margin:0;",
-                                     "The ", term("MAE"), " is the typical gap between predicted and actual values. Larger organizations have higher absolute error")))),
-                               column(6, div(class = "chart-card", h4(strong("Prediction error (", term("MAE"), ")"), " by organization size"),
-                                             tags$img(id = "err_exp_img", src = "forecast/mae_exp.png", width = "100%", style = "border-radius:8px;"),
-                                             tags$img(id = "err_rev_img", src = "forecast/mae_rev.png", width = "100%", style = "border-radius:8px; display:none;"))))))))
+                         uiOutput("port_table"))))
 
   ) # end model-content
 ) # end page_fluid

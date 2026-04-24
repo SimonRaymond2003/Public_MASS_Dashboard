@@ -275,9 +275,6 @@ server <- function(input, output, session) {
     gdp_wp = numeric(),
     jobs_d = numeric(), jobs_i = numeric(), jobs_in = numeric(), jobs_t = numeric(),
     jobs_wp = numeric(),
-    pred_val = numeric(),
-    pred_gdp_t = numeric(), pred_gdp_wp = numeric(),
-    pred_jobs_t = numeric(), pred_jobs_wp = numeric(),
     stringsAsFactors = FALSE
   ))
   
@@ -380,8 +377,6 @@ server <- function(input, output, session) {
       jobs_in = amt_m * m$jobs_induced[1],
       jobs_t  = amt_m * m$jobs_total[1],
       jobs_wp = amt_m * m$jobs_wp_total[1],
-      pred_val = NA_real_, pred_gdp_t = NA_real_, pred_gdp_wp = NA_real_,
-      pred_jobs_t = NA_real_, pred_jobs_wp = NA_real_,
       stringsAsFactors = FALSE
     )
     port_orgs(rbind(port_orgs(), new_row))
@@ -660,20 +655,7 @@ server <- function(input, output, session) {
     dl <- port_mult_detail()
     dl[[org_id]] <- detail
     port_mult_detail(dl)
-    
-    # Forecast
-    safe_pred <- function(model, nd) tryCatch(predict(model, newdata = nd), error = function(e) NA_real_)
-    nd <- data.frame(
-      Province   = factor(prov, levels = forecast_levels$provinces),
-      Category   = factor(cat,  levels = forecast_levels$categories),
-      Discipline = factor(disc, levels = forecast_levels$disciplines),
-      org_age    = org_age, stringsAsFactors = FALSE)
-    if (use_rev) { nd$rev_lag1 <- amt; pred_val <- safe_pred(lm_rev_final, nd) }
-    else         { nd$exp_lag1 <- amt; pred_val <- safe_pred(lm_exp_final, nd) }
-    
-    pred_val  <- if (is.na(pred_val)) NA_real_ else pred_val
-    pred_m    <- if (!is.na(pred_val)) pred_val / 1e6 else NA_real_
-    
+
     new_row <- data.frame(
       id     = org_id,
       name   = org_name,
@@ -693,12 +675,6 @@ server <- function(input, output, session) {
       jobs_in = amt_m * m$jobs_induced[1],
       jobs_t  = amt_m * m$jobs_total[1],
       jobs_wp = amt_m * m$jobs_wp_total[1],
-      # Forecast columns
-      pred_val    = pred_val,
-      pred_gdp_t  = if (!is.na(pred_val)) pred_val * m$gdp_total[1] else NA_real_,
-      pred_gdp_wp = if (!is.na(pred_val)) pred_val * m$gdp_wp_total[1] else NA_real_,
-      pred_jobs_t  = if (!is.na(pred_val)) pred_m * m$jobs_total[1] else NA_real_,
-      pred_jobs_wp = if (!is.na(pred_val)) pred_m * m$jobs_wp_total[1] else NA_real_,
       stringsAsFactors = FALSE
     )
     
@@ -764,37 +740,24 @@ server <- function(input, output, session) {
              paste0("Within-province: ", wp_pct, "% | Leakage: ", round(100 - wp_pct, 1), "%"))
   })
   
-  # Summary stats (includes forecast aggregates)
+  # Summary stats
   output$port_summary_stats <- renderUI({
     df <- port_orgs()
     n  <- nrow(df)
-    total_amt  <- sum(df$amount, na.rm = TRUE)
-    n_prov     <- n_distinct(df$prov)
-    n_disc     <- n_distinct(df$disc)
-    pred_gdp   <- sum(df$pred_gdp_t, na.rm = TRUE)
-    pred_jobs  <- sum(df$pred_jobs_t, na.rm = TRUE)
-    n_forecast <- sum(!is.na(df$pred_val))
-    cur_gdp    <- sum(df$gdp_t, na.rm = TRUE)
-    pct_chg    <- if (cur_gdp > 0 && pred_gdp > 0) round((pred_gdp - cur_gdp) / cur_gdp * 100, 1) else NA
-    chg_col    <- if (!is.na(pct_chg) && pct_chg >= 0) GREEN else "#E24B4A"
-    chg_txt    <- if (!is.na(pct_chg)) paste0(ifelse(pct_chg >= 0, "+", ""), pct_chg, "%") else "\u2014"
-    
+    total_amt <- sum(df$amount, na.rm = TRUE)
+    n_prov    <- n_distinct(df$prov)
+    n_disc    <- n_distinct(df$disc)
+
     row_fn <- function(l, v, col = NAVY) tags$div(
       style = "display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid #f0ede8;",
       tags$span(style = "font-size:0.72rem; font-weight:700; color:#888; text-transform:uppercase;", l),
       tags$span(style = sprintf("font-size:0.95rem; font-weight:800; color:%s;", col), v))
-    
+
     tagList(
-      row_fn("Organizations",  comma(n)),
-      row_fn("Total Input",    paste0("$", comma(round(total_amt)))),
-      row_fn("Provinces",      n_prov),
-      row_fn("Disciplines",    n_disc),
-      hr(class = "dna-divider"),
-      tags$div(style = "font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#aaa; margin:8px 0 4px;",
-               paste0("Next-Year Prediction (", n_forecast, "/", n, " orgs)")),
-      row_fn("Projected GDP",  paste0("$", comma(round(pred_gdp))), GOLD),
-      row_fn("Projected Jobs", round(pred_jobs, 1), GOLD),
-      row_fn("GDP Change",     chg_txt, chg_col))
+      row_fn("Organizations", comma(n)),
+      row_fn("Total Input",   paste0("$", comma(round(total_amt)))),
+      row_fn("Provinces",     n_prov),
+      row_fn("Disciplines",   n_disc))
   })
   
   # Portfolio table (includes forecast + expandable multiplier detail)
@@ -805,8 +768,6 @@ server <- function(input, output, session) {
     
     rows <- lapply(seq_len(nrow(df)), function(i) {
       r <- df[i, ]
-      pred_lbl <- if (!is.na(r$pred_val)) paste0("$", comma(round(r$pred_val))) else "\u2014"
-      pred_gdp_lbl <- if (!is.na(r$pred_gdp_t)) paste0("$", comma(round(r$pred_gdp_t))) else "\u2014"
       detail_id <- paste0("detail_", r$id)
       d <- details[[r$id]]
       
@@ -868,12 +829,7 @@ server <- function(input, output, session) {
                           tags$br(),
                           tags$b("Jobs: "),
                           paste0("($", comma(round(r$amount)), " / 1M) \u00d7 ", round(m_eff$jobs_total[1], 3),
-                                 " = ", round(r$jobs_t, 2), " jobs"),
-                          if (!is.na(r$pred_val)) tagList(
-                            tags$br(), tags$br(),
-                            tags$b(style = sprintf("color:%s;", GOLD), "Next-year prediction: "),
-                            paste0("$", comma(round(r$pred_val)), " \u00d7 ", round(m_eff$gdp_total[1], 4),
-                                   " = $", comma(round(r$pred_gdp_t)), " GDP"))
+                                 " = ", round(r$jobs_t, 2), " jobs")
                  ))
       } else {
         tags$div(style = "padding:8px 16px; font-size:0.72rem; color:#bbb; font-style:italic;", "Detail not available")
@@ -889,21 +845,17 @@ server <- function(input, output, session) {
                 tags$td(style = "max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;", r$disc),
                 tags$td(style = sprintf("font-weight:700; color:%s;", NAVY), paste0("$", comma(round(r$gdp_t)))),
                 tags$td(style = sprintf("font-weight:700; color:%s;", PINK), round(r$jobs_t, 1)),
-                tags$td(style = sprintf("font-weight:700; color:%s;", GOLD), pred_lbl),
-                tags$td(style = sprintf("font-weight:700; color:%s;", GOLD), pred_gdp_lbl),
                 tags$td(actionButton(paste0("port_rm_", r$id), "\u2715",
                                      class = "port-remove-btn",
                                      onclick = sprintf("event.stopPropagation(); Shiny.setInputValue('port_rm_%s', (Math.random()), {priority: 'event'})", r$id)))),
         tags$tr(id = detail_id, style = "display:none;",
-                tags$td(colspan = "9", style = "padding:0;", detail_html)))
+                tags$td(colspan = "7", style = "padding:0;", detail_html)))
     })
     
     tags$table(class = "port-table",
                tags$thead(tags$tr(
                  tags$th("Name"), tags$th("Amount"), tags$th("Prov"), tags$th("Discipline"),
                  tags$th("GDP"), tags$th("Jobs"),
-                 tags$th(style = sprintf("color:%s;", GOLD), "Prediction $"),
-                 tags$th(style = sprintf("color:%s;", GOLD), "Prediction GDP"),
                  tags$th(""))),
                tags$tbody(rows))
   })

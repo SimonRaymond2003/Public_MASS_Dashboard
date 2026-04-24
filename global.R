@@ -24,13 +24,6 @@ mapping_v2 <- fread("non-updating_data/discipline_industry_mapping_v4.csv")
 pop_raw  <- fread("updating_data/1710000501_databaseLoadingData.csv")
 prov_sf <- st_read("non-updating_data/canada_provinces.geojson", quiet = TRUE)
 
-lm_exp_final   <- readRDS("updating_data/predictions/lm_exp_final.rds")
-lm_rev_final   <- readRDS("updating_data/predictions/lm_rev_final.rds")
-exp_metrics_df <- readRDS("updating_data/predictions/exp_metrics.rds")
-rev_metrics_df <- readRDS("updating_data/predictions/rev_metrics.rds")
-forecast_levels <- readRDS("updating_data/predictions/factor_levels.rds")
-N_BOOT <- nrow(exp_metrics_df)
-addResourcePath("forecast", "updating_data/predictions")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. PREP MULTIPLIERS
@@ -323,11 +316,9 @@ TERMS <- list(
   "Leakage" = "The share of impact that flows out to other provinces via out-of-province supply chains. Indirect and induced impacts alone drive leakage.",
   "I-O Model" = "Input-Output model, first developed by economist Wassily Leontief tracks how every industry buys from and sells to every other industry, then uses those links to estimate how much GDP and how many jobs a dollar of spending creates across the whole economy.",  
   "FSA" = "Forward Sortation Area — the first 3 characters of a Canadian postal code, used to assign organizations to geographic areas.",
-  "MAE" = "Mean Absolute Error — average gap between predicted and actual values. Lower is better.",
   "Per Capita" = "Divided by population.",
   "Expenditures" = "Total spending by an organization, used as a base amount for impact calculations.",
   "Revenue" = "Total income received by an organization, used as a base for impact calculations.",
-  "Prediction" = "Predicted next-year value based on historical financials and organization characteristics. Models are trained on non-profit arts and culture data only.",
   "Employment Share" = "Proportion of a province's labour force located within the selected city.",
   "Primary" = "Uses a single industry multiplier based on the organization's main activity code.",
   "Mixture" = "Weights multiple industry multipliers equally for organizations that span several sectors.",
