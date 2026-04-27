@@ -248,6 +248,11 @@ mult_toggle_ui <- function(id, label_single = "Primary Multiplier", label_mix = 
 
 cd_sf <- readRDS("non-updating_data/cd_sf.rds")
 cd_sf <- st_transform(cd_sf, 4326)
+# Attach 2021 Census population to each CD polygon for per-capita calculations
+cd_pop <- fread("updating_data/cd_overall_shares.csv",
+                colClasses = c(CDUID = "character"),
+                select = c("CDUID", "pop_cd"))
+cd_sf <- cd_sf %>% left_join(as.data.frame(cd_pop), by = "CDUID")
 
 # Business → CD lookup (produced by updating_scripts/CD_business_lookup.R)
 business_cd_lookup <- fread("updating_data/business_cd_lookup.csv",
@@ -271,16 +276,16 @@ CD_CHOICES <- c(
 )
 
 CITY_COORDS <- list(
-  "Toronto"     = list(lng = -79.38, lat = 43.70, zoom = 15),
-  "Montréal"    = list(lng = -73.57, lat = 45.50, zoom = 15),
-  "Vancouver"   = list(lng = -123.12, lat = 49.25, zoom = 15),
-  "Calgary"     = list(lng = -114.07, lat = 51.05, zoom = 15),
-  "Edmonton"    = list(lng = -113.49, lat = 53.55, zoom = 15),
-  "Ottawa"      = list(lng = -75.70,  lat = 45.42, zoom = 15),
-  "Winnipeg"    = list(lng = -97.14,  lat = 49.90, zoom = 15),
-  "Québec City" = list(lng = -71.21,  lat = 46.81, zoom = 15),
-  "Halifax"     = list(lng = -63.57,  lat = 44.65, zoom = 15),
-  "Victoria"    = list(lng = -123.37, lat = 48.43, zoom = 15)
+  "Toronto"     = list(lng = -79.38, lat = 43.70, zoom = 9),
+  "Montréal"    = list(lng = -73.57, lat = 45.50, zoom = 9),
+  "Vancouver"   = list(lng = -123.12, lat = 49.25, zoom = 9),
+  "Calgary"     = list(lng = -114.07, lat = 51.05, zoom = 9),
+  "Edmonton"    = list(lng = -113.49, lat = 53.55, zoom = 9),
+  "Ottawa"      = list(lng = -75.70,  lat = 45.42, zoom = 9),
+  "Winnipeg"    = list(lng = -97.14,  lat = 49.90, zoom = 9),
+  "Québec City" = list(lng = -71.21,  lat = 46.81, zoom = 9),
+  "Halifax"     = list(lng = -63.57,  lat = 44.65, zoom = 9),
+  "Victoria"    = list(lng = -123.37, lat = 48.43, zoom = 9)
 )
 
 # ══════════════════════════════════════════════════════════════════════════════

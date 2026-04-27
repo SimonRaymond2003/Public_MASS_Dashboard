@@ -1003,46 +1003,65 @@ server <- function(input, output, session) {
       mutate(gdp_pct_wp = ifelse(gdp_total > 0, round(gdp_wp / gdp_total * 100, 1), 0))
   })
 
-  # Build the full-Canada map once; city picker just teleports the view
+  # Static map shell — tiles + initial view only; polygons added reactively below
   output$plot_city_map <- renderLeaflet({
-    agg <- all_cd_data()
+    leaflet(options = leafletOptions(
+      minZoom = 3, maxZoom = 12,
+      maxBounds = list(c(38, -145), c(75, -50)),
+      maxBoundsViscosity = 1.0, scrollWheelZoom = FALSE)) %>%
+      addProviderTiles(providers$CartoDB.PositronNoLabels,   options = providerTileOptions(opacity = 0.6)) %>%
+      addProviderTiles(providers$CartoDB.PositronOnlyLabels, options = providerTileOptions(opacity = 0.4)) %>%
+      setView(lng = -96, lat = 60, zoom = 4)
+  })
+
+  # Redraw polygons + legend when data or metric toggle changes
+  observe({
+    agg    <- all_cd_data()
+    metric <- if (isTRUE(input$cd_per_capita)) "gdp_per_capita" else "gdp_total"
 
     map_df <- cd_sf %>%
       left_join(agg, by = "CDUID") %>%
-      mutate(across(c(n, gdp_total, jobs_total, gdp_wp, jobs_wp, gdp_pct_wp), ~replace_na(.x, 0)))
+      mutate(across(c(n, gdp_total, jobs_total, gdp_wp, jobs_wp, gdp_pct_wp), ~replace_na(.x, 0)),
+             gdp_per_capita = ifelse(!is.na(pop_cd) & pop_cd > 0, gdp_total / pop_cd, 0),
+             map_val = .data[[metric]])
 
-    gdp_max <- max(map_df$gdp_total, 1)
-    pal <- colorNumeric(palette = c("#e8e5e0", "#6a5acd", NAVY),
-                        domain  = c(0, gdp_max), na.color = "#e8e5e0")
+    val_max   <- max(map_df$map_val, 1, na.rm = TRUE)
+    pal       <- colorNumeric(palette = c("#e8e5e0", "#6a5acd", NAVY),
+                              domain = c(0, val_max), na.color = "#e8e5e0")
+
+    is_pc     <- metric == "gdp_per_capita"
+    fmt       <- if (is_pc) labelFormat(prefix = "$", suffix = "/capita", big.mark = ",")
+                 else       labelFormat(prefix = "$", big.mark = ",")
+    leg_title <- if (is_pc) "GDP per Capita" else "GDP Impact"
 
     labels <- sprintf(
       "<div style='font-family:Inter,sans-serif; font-size:13px;'>
-        <b style='font-size:15px;'>%s</b><br>Organizations: %s<br><br>
-        <b style='color:%s;'>GDP Impact</b><br>Total: $%s<br>Within Province: $%s (%s%%)<br>
+        <b style='font-size:15px;'>%s</b><br>Population: %s<br>Organizations: %s<br><br>
+        <b style='color:%s;'>GDP Impact</b><br>Total: $%s<br>Per Capita: $%s<br>Within Province: $%s (%s%%)<br>
         <b style='color:%s;'>Jobs</b><br>Total: %s</div>",
-      map_df$CDNAME, comma(map_df$n), NAVY,
-      comma(round(map_df$gdp_total)), comma(round(map_df$gdp_wp)), map_df$gdp_pct_wp,
+      map_df$CDNAME, comma(map_df$pop_cd), comma(map_df$n), NAVY,
+      comma(round(map_df$gdp_total)), comma(round(map_df$gdp_per_capita, 2)),
+      comma(round(map_df$gdp_wp)), map_df$gdp_pct_wp,
       PINK, comma(round(map_df$jobs_total))) %>% lapply(htmltools::HTML)
 
-    leaflet(map_df, options = leafletOptions(minZoom = 3, maxZoom = 15, scrollWheelZoom = TRUE)) %>%
-      addProviderTiles(providers$CartoDB.PositronNoLabels,   options = providerTileOptions(opacity = 0.6)) %>%
-      addProviderTiles(providers$CartoDB.PositronOnlyLabels, options = providerTileOptions(opacity = 0.4)) %>%
-      setView(lng = -96, lat = 60, zoom = 4) %>%
+    leafletProxy("plot_city_map", data = map_df) %>%
+      clearShapes() %>%
+      clearControls() %>%
       addPolygons(
-        layerId       = ~CDUID,
-        fillColor     = ~pal(gdp_total), fillOpacity = 0.65,
+        layerId          = ~CDUID,
+        fillColor        = ~pal(map_val), fillOpacity = 0.65,
         weight = 1, color = "#ffffff", opacity = 0.7,
         highlightOptions = highlightOptions(weight = 2.5, color = PINK, fillOpacity = 0.85, bringToFront = TRUE),
-        label         = labels,
-        labelOptions  = labelOptions(
-          style   = list("padding" = "10px 14px", "border-radius" = "8px",
-                         "background-color" = "white", "box-shadow" = "0 2px 8px rgba(0,0,0,0.15)", "border" = "none"),
+        label            = labels,
+        labelOptions     = labelOptions(
+          style    = list("padding" = "10px 14px", "border-radius" = "8px",
+                          "background-color" = "white", "box-shadow" = "0 2px 8px rgba(0,0,0,0.15)", "border" = "none"),
           textsize = "13px", direction = "auto")) %>%
-      addLegend(position = "bottomright", pal = pal, values = ~gdp_total,
-                title = "GDP Impact", labFormat = labelFormat(prefix = "$", big.mark = ","), opacity = 0.8)
+      addLegend(position = "bottomright", pal = pal, values = map_df$map_val,
+                title = leg_title, labFormat = fmt, opacity = 0.8)
   })
 
-  # Teleport to the selected city without rebuilding the map
+  # Teleport to selected city without rebuilding the map
   observe({
     req(input$city_sel, input$city_sel != "")
     coords <- CITY_COORDS[[input$city_sel]]

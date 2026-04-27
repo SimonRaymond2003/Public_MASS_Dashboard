@@ -11,25 +11,29 @@ library(dplyr)
 options(cancensus.api_key = "CensusMapper_23ab6804287fb370dc586dfc046ff859")
 
 # v_CA21_6606 = All industries, total labour force 15+
+# v_CA21_1    = Population, 2021
 EMP_VECTOR <- "v_CA21_6606"
+POP_VECTOR <- "v_CA21_1"
 
-# ── 1. CD-level employment ───────────────────────────────────────────────────
+# ── 1. CD-level employment + population ──────────────────────────────────────
 cd_raw <- get_census(
   dataset    = "CA21",
   regions    = list(C = "01"),   # all of Canada
-  vectors    = EMP_VECTOR,
+  vectors    = c(EMP_VECTOR, POP_VECTOR),
   level      = "CD",
   geo_format = NA
 )
 
 cd_emp <- cd_raw %>%
   select(
-    CDUID  = GeoUID,
-    CDNAME = `Region Name`,
-    PRUID  = PR_UID,
-    emp_cd = `v_CA21_6606: All industries`
+    CDUID      = GeoUID,
+    CDNAME     = `Region Name`,
+    PRUID      = PR_UID,
+    emp_cd     = `v_CA21_6606: All industries`,
+    pop_cd     = `v_CA21_1: Population, 2021`
   ) %>%
-  mutate(emp_cd = as.numeric(emp_cd))
+  mutate(emp_cd = as.numeric(emp_cd),
+         pop_cd = as.numeric(pop_cd))
 
 cat("CDs retrieved:", nrow(cd_emp), "\n")
 
@@ -57,7 +61,7 @@ cd_shares <- cd_emp %>%
   left_join(pr_emp, by = "PRUID") %>%
   mutate(cd_share = ifelse(emp_prov > 0, emp_cd / emp_prov, 0)) %>%
   arrange(desc(emp_cd)) %>%
-  select(CDUID, CDNAME, province, emp_cd, emp_prov, cd_share)
+  select(CDUID, CDNAME, province, pop_cd, emp_cd, emp_prov, cd_share)
 
 cat("\nTop 15 CDs by employment:\n")
 print(head(cd_shares, 15))

@@ -315,7 +315,12 @@ ui <- page_fluid(
                                    uiOutput("city_kpi_panel")))),
     column(9,
       div(class = "chart-card", style = "min-height:500px;",
-          h4(strong(term("Census Division")), " impact map — all of Canada", style = "margin-bottom:10px;"),
+          div(style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;",
+              h4(style = "margin:0;", strong(term("Census Division")), " impact map — all of Canada"),
+              div(style = "display:flex; align-items:center; gap:8px;",
+                  tags$label(style = "font-size:0.8rem; font-weight:600; color:#777; cursor:pointer;", `for` = "cd_per_capita", term("Per capita", "Per Capita")),
+                  tags$input(type = "checkbox", id = "cd_per_capita", style = "cursor:pointer; width:18px; height:18px;",
+                             onclick = "Shiny.setInputValue('cd_per_capita', this.checked)"))),
           leafletOutput("plot_city_map", height = "460px")))),
   conditionalPanel(condition = "input.city_sel !== ''",
                    fluidRow(
