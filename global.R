@@ -20,7 +20,11 @@ org_data$`Top Compensation Category` <- NULL
 org_data$`Compensation Category Counts` <- NULL
 
 mult_dt <- fread("updating_data/provincial_multipliers_with_csa_splits.csv.gz")
-mapping_v2 <- fread("non-updating_data/discipline_industry_mapping_v4.csv")
+DISC_CODE <- fread("non-updating_data/discipline_multipliers.csv") %>%
+             as.data.frame() %>% rename(disc_code = ind_primary)
+CAT_CODE  <- fread("non-updating_data/category_multipliers.csv") %>%
+             as.data.frame() %>% rename(cat_code = ind_primary) %>%
+             mutate(cat_code = na_if(trimws(as.character(cat_code)), ""))
 pop_raw  <- fread("updating_data/1710000501_databaseLoadingData.csv")
 prov_sf <- st_read("non-updating_data/canada_provinces.geojson", quiet = TRUE)
 
@@ -69,24 +73,26 @@ pop_data <- pop_data[, c("REF_DATE","Province","VALUE")]
 names(pop_data) <- c("Year","Province","population")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 3. PARSE v2 MAPPING
+# 3. BUILD COMBO MAP FROM CATEGORY + DISCIPLINE CODES
+#    Each Discipline has one code, each Category has one code (Arts Organization
+#    has none — falls back to discipline). A combo's primary is the category
+#    code (or discipline if cat is blank); mixture is the dedup union of both.
 # ══════════════════════════════════════════════════════════════════════════════
 
-mapping_v2 <- as.data.frame(mapping_v2)
-CODE_COLS <- names(mapping_v2)[4:ncol(mapping_v2)]
-
-combo_map_v2 <- mapping_v2 %>%
-  rename(Category = 1, Discipline = 2) %>%
-  select(Category, Discipline, all_of(CODE_COLS)) %>%
-  mutate(across(all_of(CODE_COLS), ~na_if(trimws(as.character(.x)), ""))) %>%
+combo_map_v2 <- expand.grid(Category   = CAT_CODE$Category,
+                            Discipline = DISC_CODE$Discipline,
+                            stringsAsFactors = FALSE) %>%
+  left_join(CAT_CODE,  by = "Category") %>%
+  left_join(DISC_CODE, by = "Discipline") %>%
   rowwise() %>%
   mutate(
-    ind_primary = { vals <- c_across(all_of(CODE_COLS)); first(vals[!is.na(vals)]) %||% "BS71A000" },
-    ind_all = list({ vals <- unique(na.omit(c_across(all_of(CODE_COLS)))); if(length(vals)==0) "BS71A000" else vals })
+    ind_primary = if (is.na(cat_code)) disc_code else cat_code,
+    ind_all     = list(unique(na.omit(c(cat_code, disc_code))))
   ) %>% ungroup() %>%
+  mutate(ind_all = ifelse(lengths(ind_all) == 0, list("BS71A000"), ind_all)) %>%
   select(Category, Discipline, ind_primary, ind_all)
 
-# Full combo list from v4 — ALL possible Category x Discipline pairs (including those with 0 orgs in data)
+# Full combo list — ALL possible Category x Discipline pairs
 VALID_COMBOS_FULL <- combo_map_v2 %>% distinct(Category, Discipline)
 
 # ══════════════════════════════════════════════════════════════════════════════
