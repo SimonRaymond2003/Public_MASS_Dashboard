@@ -211,9 +211,54 @@ ui <- page_fluid(
         var btn = document.getElementById('nav-btn-' + t);
         if (btn) btn.className = t === tab ? 'nav-btn active' : 'nav-btn';
       });
+      if (tab === 'model') {
+        var mc = document.getElementById('model-content');
+        if (mc) Shiny.bindAll(mc);
+      }
     }
     $(document).on('shiny:busy', function() { _setTabButtonsLocked(true); });
     $(document).on('shiny:idle', function() { _setTabButtonsLocked(false); });
+
+    // ── Group entry slider clamping ──────────────────────────────────────────
+    // After bulk_sliders_ui renders, listen to each slider's hidden input.
+    // On every change, cap the moved slider to (total - sum_of_others) via
+    // irs.update({from: cap}) — runs in the browser, no Shiny round-trip.
+    function wireBulkSliderClamping() {
+      var inputs = Array.from(document.querySelectorAll('input[id^=bulk_amt_]'))
+                        .filter(function(el) { return $(el).data('ionRangeSlider'); });
+      if (!inputs.length) return;
+
+      function getTotal() {
+        var el = document.getElementById('bulk_total_amount');
+        return el ? (parseFloat(el.value) || 0) : 0;
+      }
+
+      function getVals() {
+        return inputs.map(function(el) {
+          return parseFloat($(el).data('ionRangeSlider').result.from) || 0;
+        });
+      }
+
+      function clamp(idx) {
+        var tot  = getTotal();
+        var vals = getVals();
+        var sumOthers = vals.reduce(function(s, v, j) { return j === idx ? s : s + v; }, 0);
+        var cap = Math.max(0, tot - sumOthers);
+        if (vals[idx] > cap) {
+          $(inputs[idx]).data('ionRangeSlider').update({ from: cap });
+        }
+      }
+
+      // Remove old handlers then re-attach
+      inputs.forEach(function(el, i) {
+        $(el).off('change.bulkclamp').on('change.bulkclamp', function() { clamp(i); });
+      });
+    }
+
+    $(document).on('shiny:value', function(e) {
+      if (e.name === 'bulk_sliders_ui') setTimeout(wireBulkSliderClamping, 80);
+    });
+
   ")),
 
   # ── TOP NAV ───────────────────────────────────────
@@ -419,11 +464,8 @@ ui <- page_fluid(
                                 selected = "Performing Arts", width = "100%")),
                 div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Province"),
                     selectInput("port_prov", NULL, choices = PROVINCES, selected = "ON", width = "100%")),
-                div(style = "display:grid; grid-template-columns:1fr 1fr; gap:10px;",
-                    div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Year"),
-                        selectInput("port_year", NULL, choices = YEARS_CAPPED, selected = as.character(MAX_MULT_YEAR), width = "100%")),
-                    div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Org Age (yrs)"),
-                        numericInput("port_org_age", NULL, value = 10, min = 0, max = 200, step = 1, width = "100%"))),
+                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Year"),
+                    selectInput("port_year", NULL, choices = YEARS_CAPPED, selected = as.character(MAX_MULT_YEAR), width = "100%")),
                 div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;",
                                textOutput("port_amount_lbl", inline = TRUE)),
                     numericInput("port_amount", NULL, value = 100000, min = 0, step = 1, width = "100%"))),
@@ -435,47 +477,40 @@ ui <- page_fluid(
         # ── RIGHT: Group Entry ────────────────────────────────────────────────
         div(class = "chart-card", style = sprintf("border-top:3px solid %s; display:flex; flex-direction:column;", PINK),
             div(style = sprintf("font-size:0.7rem; font-weight:800; text-transform:uppercase; letter-spacing:0.6px; color:%s; margin-bottom:10px;", PINK), "Group Entry"),
-            # toggles
-            div(style = "display:flex; gap:10px; align-items:center; margin-bottom:10px; flex-wrap:wrap;",
-                div(class = "sec-toggle-wrap",
-                    div(class = "toggle-label", term("Multiplier")),
-                    div(class = "sec-toggle-pill",
-                        tags$button(id = "bulk_method_single_btn", class = "sec-active", type = "button",
-                                    onclick = "setMultMethod('bulk','single');", "Primary"),
-                        tags$button(id = "bulk_method_mix_btn", class = "", type = "button",
-                                    onclick = "setMultMethod('bulk','mixture');", "Mixture"),
-                        tags$button(id = "bulk_method_custom_btn", class = "", type = "button",
-                                    onclick = "setMultMethod('bulk','custom');", "Custom"))),
+            # Province + Year + Base metric
+            div(style = "display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;",
+                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Province"),
+                    selectInput("bulk_prov", NULL, choices = PROVINCES, selected = "ON", width = "100%")),
+                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Year"),
+                    selectInput("bulk_year", NULL, choices = YEARS_CAPPED, selected = as.character(MAX_MULT_YEAR), width = "100%"))),
+            div(style = "display:flex; gap:12px; margin-bottom:10px; flex-wrap:wrap;",
                 div(class = "sec-toggle-wrap",
                     div(class = "toggle-label", "Base"),
                     div(class = "sec-toggle-pill",
                         tags$button(id = "bulk_base_exp_btn", class = "sec-active", type = "button",
                                     onclick = "var cur=document.getElementById('bulk_base_exp_btn').className==='sec-active'; document.getElementById('bulk_base_exp_btn').className=cur?'':'sec-active'; document.getElementById('bulk_base_rev_btn').className=cur?'sec-active':''; Shiny.setInputValue('bulk_base_metric',cur?'rev':'exp');", "Exp"),
                         tags$button(id = "bulk_base_rev_btn", class = "", type = "button",
-                                    onclick = "var cur=document.getElementById('bulk_base_rev_btn').className==='sec-active'; document.getElementById('bulk_base_rev_btn').className=cur?'':'sec-active'; document.getElementById('bulk_base_exp_btn').className=cur?'sec-active':''; Shiny.setInputValue('bulk_base_metric',cur?'exp':'rev');", "Rev")))),
-            div(id = "bulk_weight_wrap", style = "margin:-4px 0 8px;",
-                uiOutput("bulk_weight_ui"),
-                uiOutput("bulk_custom_weights_ui")),
-            div(style = "flex:1; display:flex; flex-direction:column; gap:10px;",
-                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Organization Type"),
-                    selectInput("bulk_cat", NULL, choices = CALC_CATEGORIES, selected = "Arts Organization", width = "100%")),
-                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Discipline"),
-                    selectInput("bulk_disc", NULL,
-                                choices = VALID_COMBOS_FULL %>% filter(Category == "Arts Organization") %>% pull(Discipline) %>% sort(),
-                                selected = "Performing Arts", width = "100%")),
-                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Province"),
-                    selectInput("bulk_prov", NULL, choices = PROVINCES, selected = "ON", width = "100%")),
-                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Year"),
-                    selectInput("bulk_year", NULL, choices = YEARS_CAPPED, selected = as.character(MAX_MULT_YEAR), width = "100%")),
-                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Number of Orgs"),
-                    numericInput("bulk_n", NULL, value = 10, min = 1, max = 10000, step = 1, width = "100%")),
-                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;",
-                               textOutput("bulk_amount_lbl", inline = TRUE)),
-                    numericInput("bulk_amount", NULL, value = 100000, min = 0, step = 1, width = "100%"))),
-            div(style = "margin-top:16px;",
-                actionButton("bulk_add", "+ Add Group",
-                             style = sprintf("width:100%%; background:%s; color:%s; border:none; border-radius:8px; padding:11px 0; font-weight:700; font-size:0.85rem; letter-spacing:0.3px; cursor:pointer;", PINK, WHITE),
-                             onclick = "setTimeout(function(){ setMultMethod('bulk','single'); }, 300);"))))
+                                    onclick = "var cur=document.getElementById('bulk_base_rev_btn').className==='sec-active'; document.getElementById('bulk_base_rev_btn').className=cur?'':'sec-active'; document.getElementById('bulk_base_exp_btn').className=cur?'sec-active':''; Shiny.setInputValue('bulk_base_metric',cur?'exp':'rev');", "Rev"))),
+                div(class = "sec-toggle-wrap",
+                    div(class = "toggle-label", "Multiplier"),
+                    div(class = "sec-toggle-pill",
+                        tags$button(id = "bulk_mult_primary_btn", class = "sec-active", type = "button",
+                                    onclick = "var cur=document.getElementById('bulk_mult_primary_btn').className==='sec-active'; document.getElementById('bulk_mult_primary_btn').className=cur?'':'sec-active'; document.getElementById('bulk_mult_mix_btn').className=cur?'sec-active':''; Shiny.setInputValue('bulk_mult_method',cur?'mixture':'primary');", "Primary"),
+                        tags$button(id = "bulk_mult_mix_btn", class = "", type = "button",
+                                    onclick = "var cur=document.getElementById('bulk_mult_mix_btn').className==='sec-active'; document.getElementById('bulk_mult_mix_btn').className=cur?'':'sec-active'; document.getElementById('bulk_mult_primary_btn').className=cur?'sec-active':''; Shiny.setInputValue('bulk_mult_method',cur?'primary':'mixture');", "Mixture")))),
+
+            # ── STEP 1: Org type slots ────────────────────────────────────────
+            div(style = "font-size:0.65rem; font-weight:800; text-transform:uppercase; color:#aaa; margin-bottom:6px; letter-spacing:0.5px;", "Step 1 — Org Types"),
+            uiOutput("bulk_types_ui"),
+            tags$button("+ Add Org Type",
+                        style = "background:#1a1a2e; color:#fff; border:none; border-radius:6px; padding:8px 14px; font-size:0.75rem; font-weight:700; cursor:pointer; width:100%; margin-bottom:10px; letter-spacing:0.3px;",
+                        onclick = "Shiny.setInputValue('bulk_row_add', Math.random(), {priority:'event'});"),
+
+            # ── STEP 2: Total + per-type spend sliders ───────────────────────
+            uiOutput("bulk_sliders_ui"),
+            div(style = "margin-top:auto; padding-top:12px;",
+                actionButton("bulk_add", "Add Group to Portfolio",
+                             style = sprintf("width:100%%; background:%s; color:%s; border:none; border-radius:8px; padding:11px 0; font-weight:700; font-size:0.85rem; letter-spacing:0.3px; cursor:pointer;", PINK, WHITE)))))
 
     , # ── RESULTS ───────────────────────────────────────────────────────────
     conditionalPanel(condition = "output.port_has_orgs", div(style = "display:block; width:100%;",
