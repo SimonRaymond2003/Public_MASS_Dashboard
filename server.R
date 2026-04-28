@@ -430,12 +430,11 @@ server <- function(input, output, session) {
     amt_status(bulk_cat_list(), "bulk_cat_amt_", tot)
   })
 
-  # ── STEP 2: Total expenditure / revenue ───────────────────────────────────
+  # ── STEP 2: Total output (Exp / Rev) ──────────────────────────────────────
   output$bulk_total_ui <- renderUI({
-    use_rev <- isTRUE(input$bulk_base_metric == "rev")
     div(
       tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;",
-                 if (use_rev) "Total Revenue ($)" else "Total Expenditures ($)"),
+                 "Total Output (Exp / Rev) ($)"),
       numericInput("bulk_total_amount", NULL,
                    value = as.numeric(isolate(input$bulk_total_amount) %||% 1000000),
                    min = 1, step = 1, width = "100%"))
@@ -462,7 +461,6 @@ server <- function(input, output, session) {
     }
     prov    <- input$bulk_prov
     yr      <- as.numeric(input$bulk_year)
-    use_rev <- isTRUE(input$bulk_base_metric == "rev")
     use_mix <- isTRUE(input$bulk_mult_method == "mixture")
 
     # Read live dollar inputs
@@ -583,7 +581,7 @@ server <- function(input, output, session) {
       id = org_id, name = org_name, count = NA, amount = total,
       prov = prov, cat = "Mixed",
       disc = paste(c(discs, cats), collapse = " / "),
-      yr = yr, base = if (use_rev) "Rev" else "Exp",
+      yr = yr, base = "Output",
       mult_lbl = paste(ind_codes, collapse = " + "),
       gdp_d  = total   * m$gdp_direct[1],
       gdp_i  = total   * m$gdp_indirect[1],
@@ -603,9 +601,7 @@ server <- function(input, output, session) {
   })
 
   # Amount input with dynamic label
-  output$port_amount_lbl <- renderText({
-    if (!is.null(input$port_base_metric) && input$port_base_metric == "rev") "Revenue ($)" else "Expenditures ($)"
-  })
+  output$port_amount_lbl <- renderText({ "Output (Exp / Rev) ($)" })
 
   # Industry codes for current portfolio selection (for mixture slider)
   port_ind_codes <- reactive({
@@ -714,7 +710,6 @@ server <- function(input, output, session) {
     if (length(amt) == 0 || is.na(amt) || amt <= 0) return()
     prov <- input$port_prov; cat <- input$port_cat; disc <- input$port_disc
     yr   <- as.numeric(input$port_year)
-    use_rev    <- !is.null(input$port_base_metric) && input$port_base_metric == "rev"
     use_mix    <- !is.null(input$port_mult_method) && input$port_mult_method == "mixture"
     use_custom <- !is.null(input$port_mult_method) && input$port_mult_method == "custom"
 
@@ -789,7 +784,7 @@ server <- function(input, output, session) {
       amount = amt,
       prov   = prov, cat = cat, disc = disc,
       yr     = yr,
-      base   = if (use_rev) "Rev" else "Exp",
+      base   = "Output",
       mult_lbl = mult_lbl,
       gdp_d  = amt   * m$gdp_direct[1],
       gdp_i  = amt   * m$gdp_indirect[1],
