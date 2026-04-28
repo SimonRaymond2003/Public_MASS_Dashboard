@@ -62,9 +62,9 @@ subdomain_ioic <- tribble(
   "Music publishing",                                      "BS334A00",
   "Music publishing",                                      "BS451000",
   "Music publishing",                                      "BS512200",
-  "Sound recording ==> Sound recording",                   "BS414000",
-  "Sound recording ==> Sound recording",                   "BS451000",
-  "Sound recording ==> Sound recording",                   "BS512200",
+  "Sound recording",                                        "BS414000",
+  "Sound recording",                                        "BS451000",
+  "Sound recording",                                        "BS512200",
   "Collected information",                                 "BS519000",
   "Education and training (culture)",                      "BS610000",
   "Education and training (sport)",                        "BS610000",
@@ -521,6 +521,7 @@ prov_published <- pub_gdp %>%
                                 jobs_direct, jobs_indirect, jobs_induced,
                                 jobs_simple, jobs_total),
             by = c("year", "geo", "coverage", "Industry")) %>%
+  filter(nzchar(Industry)) %>%          # drop rows with blank industry code
   mutate(source = "StatCan published",
          industry_code = Industry,
          domain_label = NA_character_) %>%
@@ -529,9 +530,16 @@ prov_published <- pub_gdp %>%
          jobs_direct, jobs_indirect, jobs_induced, jobs_simple, jobs_total,
          source)
 
+clean_csa_code <- function(domain) {
+  x <- gsub("[^A-Za-z0-9]+", "_", domain)  # collapse any run of non-alphanumeric to single _
+  x <- gsub("_+$", "", x)                  # strip trailing _
+  x <- gsub("^_+", "", x)                  # strip leading _
+  paste0("csa_", x)
+}
+
 prov_new <- all_splits %>%
   filter(geo != "Canada") %>%
-  mutate(industry_code = paste0("csa_", gsub("[^A-Za-z0-9]", "_", Domain)),
+  mutate(industry_code = clean_csa_code(Domain),
          domain_label = Domain,
          source = "CSA split") %>%
   select(year, geo, coverage, industry_code, domain_label,
