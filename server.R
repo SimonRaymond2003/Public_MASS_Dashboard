@@ -600,6 +600,277 @@ server <- function(input, output, session) {
     bulk_cat_list(character())
   })
 
+  # ── DATA PICKER (From Real Data card) ──────────────────────────────────────
+  # Pool: org_data filtered ONLY by year + province. Used to drive the
+  # available choices for CD / cats / discs (cascades — only show options
+  # that have at least one matching org).
+  dp_pool <- reactive({
+    yr <- as.numeric(input$dp_year %||% MAX_MULT_YEAR)
+    df <- org_data %>%
+      filter(Year == yr,
+             !is.na(`Total Expenditures`),
+             `Total Expenditures` > 0)
+    if (!is.null(input$dp_prov) && nzchar(input$dp_prov)) {
+      df <- df %>% filter(Province == input$dp_prov)
+    }
+    df
+  })
+
+  # Final filtered set — used for preview, checklist, and Add button
+  dp_filtered <- reactive({
+    df <- dp_pool()
+    yr <- as.numeric(input$dp_year %||% MAX_MULT_YEAR)
+    if (!is.null(input$dp_cd) && nzchar(input$dp_cd)) {
+      cd_bns <- business_cd_lookup[CDUID == input$dp_cd & Year == yr, `Business Number`]
+      df <- df %>% filter(`Business Number` %in% cd_bns)
+    }
+    if (!is.null(input$dp_cat) && nzchar(input$dp_cat)) {
+      df <- df %>% filter(Category == input$dp_cat)
+    }
+    if (!is.null(input$dp_disc) && nzchar(input$dp_disc)) {
+      df <- df %>% filter(Discipline == input$dp_disc)
+    }
+    q <- trimws(input$dp_search %||% "")
+    if (nzchar(q)) {
+      df <- df %>% filter(grepl(q, `Legal Name`, ignore.case = TRUE, fixed = FALSE))
+    }
+    df
+  })
+
+  # Reset button — clear province / CD / cat / disc / search
+  observeEvent(input$dp_reset, {
+    updateSelectInput(session, "dp_prov", selected = "")
+    session$sendCustomMessage("dp_reset_search", TRUE)
+    # cd / cat / disc are uiOutput-rendered selectInputs; setting to "" works on the next re-render
+    updateSelectInput(session, "dp_cd",   selected = "")
+    updateSelectInput(session, "dp_cat",  selected = "")
+    updateSelectInput(session, "dp_disc", selected = "")
+  }, ignoreInit = TRUE, ignoreNULL = TRUE)
+
+  # CD dropdown — every CD in the province/territory that has matching orgs
+  output$dp_cd_ui <- renderUI({
+    pool <- dp_pool()
+    yr   <- as.numeric(input$dp_year %||% MAX_MULT_YEAR)
+    avail_bns <- pool$`Business Number`
+    cd_rows   <- business_cd_lookup[Year == yr & `Business Number` %in% avail_bns,
+                                    .(n = .N), by = .(CDUID, CDNAME)]
+    cd_rows   <- cd_rows[order(CDNAME)]
+    choices   <- setNames(cd_rows$CDUID, cd_rows$CDNAME)
+    cur <- isolate(input$dp_cd) %||% ""
+    if (!cur %in% choices) cur <- ""
+    selectInput("dp_cd", NULL,
+                choices = c("Any" = "", choices),
+                selected = cur, width = "100%")
+  })
+
+  # Org Type — single select, only categories with matches under year/province/CD/disc
+  output$dp_cat_ui <- renderUI({
+    df <- dp_pool()
+    yr <- as.numeric(input$dp_year %||% MAX_MULT_YEAR)
+    if (!is.null(input$dp_cd) && nzchar(input$dp_cd)) {
+      cd_bns <- business_cd_lookup[CDUID == input$dp_cd & Year == yr, `Business Number`]
+      df <- df %>% filter(`Business Number` %in% cd_bns)
+    }
+    if (!is.null(input$dp_disc) && nzchar(input$dp_disc)) {
+      df <- df %>% filter(Discipline == input$dp_disc)
+    }
+    avail <- sort(unique(df$Category))
+    cur <- isolate(input$dp_cat) %||% ""
+    if (!cur %in% avail) cur <- ""
+    selectInput("dp_cat", NULL,
+                choices = c("Any" = "", avail),
+                selected = cur, width = "100%")
+  })
+
+  # Discipline — single select
+  output$dp_disc_ui <- renderUI({
+    df <- dp_pool()
+    yr <- as.numeric(input$dp_year %||% MAX_MULT_YEAR)
+    if (!is.null(input$dp_cd) && nzchar(input$dp_cd)) {
+      cd_bns <- business_cd_lookup[CDUID == input$dp_cd & Year == yr, `Business Number`]
+      df <- df %>% filter(`Business Number` %in% cd_bns)
+    }
+    if (!is.null(input$dp_cat) && nzchar(input$dp_cat)) {
+      df <- df %>% filter(Category == input$dp_cat)
+    }
+    avail <- sort(unique(df$Discipline))
+    cur <- isolate(input$dp_disc) %||% ""
+    if (!cur %in% avail) cur <- ""
+    selectInput("dp_disc", NULL,
+                choices = c("Any" = "", avail),
+                selected = cur, width = "100%")
+  })
+
+  output$dp_preview <- renderUI({
+    df <- dp_filtered()
+    n  <- nrow(df)
+    fmt <- function(x) formatC(round(x), format = "f", digits = 0, big.mark = ",")
+    if (n == 0) {
+      return(div(style = "font-size:0.78rem; color:#c62828; font-weight:700;",
+                 "No matching organizations — broaden your filters."))
+    }
+    selected_bns <- input$dp_org_checks %||% df$`Business Number`
+    df_sel <- df %>% filter(`Business Number` %in% selected_bns)
+    n_sel <- nrow(df_sel)
+    total_exp <- sum(df_sel$`Total Expenditures`, na.rm = TRUE)
+    avg_exp   <- if (n_sel > 0) total_exp / n_sel else 0
+    tagList(
+      div(style = "display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;",
+          tags$span(style = "font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888;",
+                    paste0("Selected (", n_sel, " of ", n, ")")),
+          tags$span(style = sprintf("font-size:1.4rem; font-weight:800; color:%s;", NAVY), comma(n_sel))),
+      div(style = "display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;",
+          tags$span(style = "font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888;", "Total Expenditures"),
+          tags$span(style = "font-size:0.95rem; font-weight:700; color:#444;",
+                    paste0("$", fmt(total_exp)))),
+      div(style = "display:flex; justify-content:space-between; align-items:baseline;",
+          tags$span(style = "font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888;", "Avg per org"),
+          tags$span(style = "font-size:0.78rem; color:#888;",
+                    paste0("$", fmt(avg_exp)))))
+  })
+
+  # Org checklist with Select All / Clear — re-renders only when the filtered
+  # set changes, so checking a box doesn't re-render and lose state.
+  # Hidden when result set > MAX_LIST_ROWS to avoid rendering thousands of
+  # checkboxes (would stall the browser binding every input).
+  DP_MAX_LIST_ROWS <- 200
+  output$dp_org_list <- renderUI({
+    df <- dp_filtered()
+    n  <- nrow(df)
+    if (n == 0) return(NULL)
+    if (n > DP_MAX_LIST_ROWS) {
+      return(tagList(
+        tags$hr(style = "border:none; border-top:1px solid #e0ddd8; margin:10px 0 8px;"),
+        div(style = "font-size:0.78rem; color:#888; padding:8px 4px; line-height:1.5;",
+            paste0(comma(n), " orgs match — narrow with province, org type, discipline, or search to under ",
+                   DP_MAX_LIST_ROWS, " before picking individuals."))
+      ))
+    }
+    fmt <- function(x) formatC(round(x), format = "f", digits = 0, big.mark = ",")
+    df_sorted <- df %>% arrange(desc(`Total Expenditures`))
+    bns <- df_sorted$`Business Number`
+    labels <- paste0(df_sorted$`Legal Name`, " — $", sapply(df_sorted$`Total Expenditures`, fmt),
+                     " (", df_sorted$Category, " / ", df_sorted$Discipline, ")")
+    names(bns) <- labels
+    tagList(
+      tags$hr(style = "border:none; border-top:1px solid #e0ddd8; margin:10px 0 8px;"),
+      div(style = "display:flex; gap:8px; margin-bottom:6px;",
+          tags$button("Select all",
+                      style = "background:transparent; color:#444; border:1px solid #ccc; border-radius:6px; padding:4px 10px; font-size:0.7rem; font-weight:700; cursor:pointer;",
+                      onclick = sprintf("Shiny.setInputValue('dp_select_all', Math.random(), {priority:'event'});")),
+          tags$button("Clear",
+                      style = "background:transparent; color:#444; border:1px solid #ccc; border-radius:6px; padding:4px 10px; font-size:0.7rem; font-weight:700; cursor:pointer;",
+                      onclick = sprintf("Shiny.setInputValue('dp_clear_all', Math.random(), {priority:'event'});"))),
+      div(style = "max-height:240px; overflow-y:auto; background:#fff; border:1px solid #e0ddd8; border-radius:6px; padding:8px;",
+          checkboxGroupInput("dp_org_checks", NULL,
+                             choices = bns,
+                             selected = bns)))
+  }) |> bindEvent(dp_filtered())
+
+  observeEvent(input$dp_select_all, {
+    df <- dp_filtered()
+    updateCheckboxGroupInput(session, "dp_org_checks",
+                             selected = df$`Business Number`)
+  }, ignoreInit = TRUE, ignoreNULL = TRUE)
+  observeEvent(input$dp_clear_all, {
+    updateCheckboxGroupInput(session, "dp_org_checks", selected = character(0))
+  }, ignoreInit = TRUE, ignoreNULL = TRUE)
+
+  observeEvent(input$dp_add, {
+    df_all <- dp_filtered()
+    if (nrow(df_all) == 0) {
+      showNotification("No orgs match the current filters.", type = "warning", duration = 4)
+      return()
+    }
+    selected_bns <- input$dp_org_checks
+    if (is.null(selected_bns) || length(selected_bns) == 0) {
+      if (nrow(df_all) > DP_MAX_LIST_ROWS) {
+        showNotification(paste0("Too many matches (", comma(nrow(df_all)),
+                                ") — narrow filters to under ", DP_MAX_LIST_ROWS, " orgs before adding."),
+                         type = "warning", duration = 5)
+      } else {
+        showNotification("Tick at least one organization to add.", type = "warning", duration = 4)
+      }
+      return()
+    }
+    df <- df_all %>% filter(`Business Number` %in% selected_bns)
+    if (nrow(df) == 0) return()
+
+    yr      <- as.numeric(input$dp_year %||% MAX_MULT_YEAR)
+    use_mix <- isTRUE(input$dp_mult_method == "mixture")
+
+    # Cap to avoid accidentally adding tens of thousands of rows in one click
+    MAX_ROWS <- 500
+    if (nrow(df) > MAX_ROWS) {
+      showNotification(paste0(nrow(df), " orgs selected — too many to add at once. Limit to ", MAX_ROWS, "."),
+                       type = "warning", duration = 6)
+      return()
+    }
+
+    method_lbl <- if (use_mix) "Mixture" else "Primary"
+    existing <- port_orgs()
+    new_rows_list <- vector("list", nrow(df))
+    new_details   <- list()
+
+    for (i in seq_len(nrow(df))) {
+      r <- df[i, ]
+      amt  <- as.numeric(r$`Total Expenditures`)
+      prov <- r$Province
+      cat  <- r$Category
+      disc <- r$Discipline
+      combo_row <- combo_map_v2 %>% filter(Category == cat, Discipline == disc)
+      ind_primary <- if (nrow(combo_row) > 0) combo_row$ind_primary[1] else "BS71A000"
+      ind_all     <- if (nrow(combo_row) > 0) combo_row$ind_all[[1]]   else "BS71A000"
+
+      if (use_mix && length(ind_all) > 1) {
+        weights <- rep(1 / length(ind_all), length(ind_all))
+        m <- get_mult_row_mixture(prov, yr, ind_all)
+        codes_used <- ind_all
+      } else {
+        weights <- 1
+        m <- get_mult_row(prov, yr, ind_primary)
+        codes_used <- ind_primary
+      }
+
+      ind_rows <- lapply(codes_used, function(ind) get_mult_row(prov, yr, ind))
+      mult_lbl <- if (length(codes_used) == 1) codes_used else paste0(codes_used, " (", round(weights * 100), "%)", collapse = " + ")
+      amt_m <- amt / 1e6
+
+      org_name <- if (!is.null(r$`Legal Name`) && nzchar(r$`Legal Name`)) r$`Legal Name` else paste0("Org ", nrow(existing) + i)
+      org_id <- paste0("p_", as.integer(Sys.time()), "_", i, "_", sample(10000, 1))
+
+      new_details[[org_id]] <- list(
+        codes = codes_used, weights = weights, ind_primary = ind_primary,
+        ind_rows = ind_rows, m_eff = m, method = method_lbl
+      )
+
+      new_rows_list[[i]] <- data.frame(
+        id = org_id, name = org_name, count = 1, amount = amt,
+        prov = prov, cat = cat, disc = disc,
+        yr = yr, base = "Output", mult_lbl = mult_lbl,
+        gdp_d  = amt   * m$gdp_direct[1],
+        gdp_i  = amt   * m$gdp_indirect[1],
+        gdp_in = amt   * m$gdp_induced[1],
+        gdp_t  = amt   * m$gdp_total[1],
+        gdp_wp = amt   * m$gdp_wp_total[1],
+        jobs_d  = amt_m * m$jobs_direct[1],
+        jobs_i  = amt_m * m$jobs_indirect[1],
+        jobs_in = amt_m * m$jobs_induced[1],
+        jobs_t  = amt_m * m$jobs_total[1],
+        jobs_wp = amt_m * m$jobs_wp_total[1],
+        stringsAsFactors = FALSE
+      )
+    }
+
+    new_rows <- do.call(rbind, new_rows_list)
+    port_orgs(rbind(existing, new_rows))
+    dl <- port_mult_detail()
+    dl <- c(dl, new_details)
+    port_mult_detail(dl)
+    showNotification(paste0("Added ", nrow(df), " organization", if (nrow(df) != 1) "s" else "", " from real data."),
+                     type = "default", duration = 3)
+  })
+
   # Amount input with dynamic label
   output$port_amount_lbl <- renderText({ "Output (Exp / Rev) ($)" })
 

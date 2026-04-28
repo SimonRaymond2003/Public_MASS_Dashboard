@@ -197,6 +197,10 @@ ui <- page_fluid(
       var el = document.getElementById('port_name');
       if (el) { el.value = ''; Shiny.setInputValue('port_name', ''); }
     });
+    Shiny.addCustomMessageHandler('dp_reset_search', function(msg) {
+      var el = document.getElementById('dp_search');
+      if (el) { el.value = ''; Shiny.setInputValue('dp_search', ''); }
+    });
     function _setTabButtonsLocked(locked) {
       document.querySelectorAll('#model-content button').forEach(function(btn) {
         btn.disabled = locked;
@@ -481,11 +485,33 @@ ui <- page_fluid(
     ")),
 
     # ── SIDE-BY-SIDE INPUT CARDS (always visible, equal height) ──────────────
+    tags$script(HTML(sprintf("
+      function setEntryMode(mode) {
+        document.getElementById('entry-mode-single').style.display = mode === 'single' ? '' : 'none';
+        document.getElementById('entry-mode-group').style.display  = mode === 'group'  ? '' : 'none';
+        document.getElementById('entry-tab-single').className = mode === 'single' ? 'sec-active' : '';
+        document.getElementById('entry-tab-group').className  = mode === 'group'  ? 'sec-active' : '';
+      }
+      function toggleEntryMode() {
+        var on = document.getElementById('entry-tab-single').className === 'sec-active';
+        setEntryMode(on ? 'group' : 'single');
+      }
+    "))),
     div(style = "display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:stretch; margin-bottom:20px;",
 
-        # ── LEFT: One at a Time ───────────────────────────────────────────────
+        # ── LEFT: Manual Entry (Single OR Group, toggled) ─────────────────────
         div(class = "chart-card", style = sprintf("border-top:3px solid %s; display:flex; flex-direction:column;", NAVY),
-            div(style = sprintf("font-size:0.7rem; font-weight:800; text-transform:uppercase; letter-spacing:0.6px; color:%s; margin-bottom:10px;", NAVY), "One at a Time"),
+            # Tab toggle
+            div(style = "display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; gap:10px; flex-wrap:wrap;",
+                div(style = sprintf("font-size:0.7rem; font-weight:800; text-transform:uppercase; letter-spacing:0.6px; color:%s;", NAVY), "Manual Entry"),
+                div(class = "sec-toggle-pill",
+                    tags$button(id = "entry-tab-single", class = "sec-active", type = "button",
+                                onclick = "toggleEntryMode();", "Single"),
+                    tags$button(id = "entry-tab-group", class = "", type = "button",
+                                onclick = "toggleEntryMode();", "Group"))),
+
+            # ── Mode: Single (One at a Time) ──────────────────────────────────
+            div(id = "entry-mode-single", style = "display:flex; flex-direction:column; flex:1;",
             # toggles
             div(style = "display:flex; gap:10px; align-items:center; margin-bottom:10px; flex-wrap:wrap;",
                 div(class = "sec-toggle-wrap",
@@ -521,12 +547,12 @@ ui <- page_fluid(
             div(style = "margin-top:16px;",
                 actionButton("port_add", "+ Add to Portfolio",
                              style = sprintf("width:100%%; background:%s; color:%s; border:none; border-radius:8px; padding:11px 0; font-weight:700; font-size:0.85rem; letter-spacing:0.3px; cursor:pointer;", NAVY, WHITE),
-                             onclick = "setTimeout(function(){ setMultMethod('port','single'); }, 300);"))),
+                             onclick = "setTimeout(function(){ setMultMethod('port','single'); }, 300);"))
+            ),  # close entry-mode-single
 
-        # ── RIGHT: Group Entry ────────────────────────────────────────────────
-        div(class = "chart-card", style = sprintf("border-top:3px solid %s; display:flex; flex-direction:column;", PINK),
-            div(style = sprintf("font-size:0.7rem; font-weight:800; text-transform:uppercase; letter-spacing:0.6px; color:%s; margin-bottom:10px;", PINK), "Group Entry"),
-            # Province + Year + Base metric
+            # ── Mode: Group Entry ─────────────────────────────────────────────
+            div(id = "entry-mode-group", style = "display:none; flex-direction:column; flex:1;",
+            # Province + Year
             div(style = "display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;",
                 div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Province"),
                     selectInput("bulk_prov", NULL, choices = PROVINCES, selected = "ON", width = "100%")),
@@ -561,7 +587,72 @@ ui <- page_fluid(
                     uiOutput("bulk_cat_panel"))),
             div(style = "margin-top:auto; padding-top:12px;",
                 actionButton("bulk_add", "Add Group to Portfolio",
-                             style = sprintf("width:100%%; background:%s; color:%s; border:none; border-radius:8px; padding:11px 0; font-weight:700; font-size:0.85rem; letter-spacing:0.3px; cursor:pointer;", PINK, WHITE)))))
+                             style = sprintf("width:100%%; background:%s; color:%s; border:none; border-radius:8px; padding:11px 0; font-weight:700; font-size:0.85rem; letter-spacing:0.3px; cursor:pointer;", PINK, WHITE)))
+            )  # close entry-mode-group
+        ),  # close Manual Entry chart-card
+
+        # ── RIGHT: From Real Data ─────────────────────────────────────────────
+        div(class = "chart-card", style = sprintf("border-top:3px solid %s; display:flex; flex-direction:column;", PINK),
+            div(style = sprintf("font-size:0.7rem; font-weight:800; text-transform:uppercase; letter-spacing:0.6px; color:%s; margin-bottom:10px;", PINK), "From Real Data"),
+            div(style = "font-size:0.7rem; color:#777; margin-bottom:10px; line-height:1.4;",
+                "Pull a slice of MASS Culture orgs straight from the data — filter by geography, then optionally narrow by org type and discipline. Each match is added as its own portfolio row using its real expenditures."),
+
+            # Step 1: Year + Province
+            div(style = "font-size:0.65rem; font-weight:800; text-transform:uppercase; color:#aaa; margin-bottom:6px; letter-spacing:0.5px;",
+                "Step 1 — Geography"),
+            div(style = "display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;",
+                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Year"),
+                    selectInput("dp_year", NULL, choices = YEARS_CAPPED,
+                                selected = as.character(MAX_MULT_YEAR), width = "100%")),
+                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Province"),
+                    selectInput("dp_prov", NULL,
+                                choices = c("All Canada" = "", PROVINCES),
+                                selected = "", width = "100%"))),
+            div(style = "margin-bottom:12px;",
+                tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Census Division (optional)"),
+                uiOutput("dp_cd_ui")),
+
+            # Step 2: Org Type (single, cascades to what's available)
+            div(style = "font-size:0.65rem; font-weight:800; text-transform:uppercase; color:#aaa; margin-bottom:6px; letter-spacing:0.5px;",
+                "Step 2 — Org Type (optional)"),
+            div(style = "margin-bottom:12px;",
+                uiOutput("dp_cat_ui")),
+
+            # Step 3: Discipline (single, cascades to what's available)
+            div(style = "font-size:0.65rem; font-weight:800; text-transform:uppercase; color:#aaa; margin-bottom:6px; letter-spacing:0.5px;",
+                "Step 3 — Discipline (optional)"),
+            div(style = "margin-bottom:12px;",
+                uiOutput("dp_disc_ui")),
+
+            # Multiplier toggle + Reset
+            div(style = "display:flex; gap:12px; margin-bottom:10px; flex-wrap:wrap; align-items:center;",
+                div(class = "sec-toggle-wrap",
+                    div(class = "toggle-label", "Multiplier"),
+                    div(class = "sec-toggle-pill",
+                        tags$button(id = "dp_mult_primary_btn", class = "sec-active", type = "button",
+                                    onclick = "var cur=document.getElementById('dp_mult_primary_btn').className==='sec-active'; document.getElementById('dp_mult_primary_btn').className=cur?'':'sec-active'; document.getElementById('dp_mult_mix_btn').className=cur?'sec-active':''; Shiny.setInputValue('dp_mult_method',cur?'mixture':'primary');", "Primary"),
+                        tags$button(id = "dp_mult_mix_btn", class = "", type = "button",
+                                    onclick = "var cur=document.getElementById('dp_mult_mix_btn').className==='sec-active'; document.getElementById('dp_mult_mix_btn').className=cur?'':'sec-active'; document.getElementById('dp_mult_primary_btn').className=cur?'sec-active':''; Shiny.setInputValue('dp_mult_method',cur?'primary':'mixture');", "Mixture"))),
+                tags$button("Reset filters",
+                            style = "background:transparent; color:#666; border:1px solid #ccc; border-radius:6px; padding:5px 12px; font-size:0.7rem; font-weight:700; cursor:pointer; margin-left:auto;",
+                            onclick = "Shiny.setInputValue('dp_reset', Math.random(), {priority:'event'});")),
+
+            # Org name search
+            div(style = "margin-bottom:10px;",
+                tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Search org name"),
+                tags$input(id = "dp_search", type = "text", value = "", placeholder = "Type to filter the list below…",
+                           style = "width:100%; padding:7px 10px; border:1px solid #ddd; border-radius:8px; font-size:0.82rem; background:white; box-sizing:border-box;",
+                           oninput = "Shiny.setInputValue('dp_search', this.value);")),
+
+            # Live preview + selectable org checklist
+            div(style = "background:#f8f7f4; border-radius:8px; padding:12px; margin-bottom:10px;",
+                uiOutput("dp_preview"),
+                uiOutput("dp_org_list")),
+
+            div(style = "margin-top:auto; padding-top:12px;",
+                actionButton("dp_add", "+ Add Selected Orgs to Portfolio",
+                             style = sprintf("width:100%%; background:%s; color:%s; border:none; border-radius:8px; padding:11px 0; font-weight:700; font-size:0.85rem; letter-spacing:0.3px; cursor:pointer;", PINK, WHITE))))
+    )  # close grid
 
     , # ── RESULTS ───────────────────────────────────────────────────────────
     conditionalPanel(condition = "output.port_has_orgs", div(style = "display:block; width:100%;",
