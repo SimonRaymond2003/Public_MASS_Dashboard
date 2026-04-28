@@ -220,43 +220,99 @@ ui <- page_fluid(
     $(document).on('shiny:idle', function() { _setTabButtonsLocked(false); });
 
     // ── Group entry slider clamping ──────────────────────────────────────────
-    // After bulk_sliders_ui renders, listen to each slider's hidden input.
-    // On every change, cap the moved slider to (total - sum_of_others) via
-    // irs.update({from: cap}) — runs in the browser, no Shiny round-trip.
-    function wireBulkSliderClamping() {
-      var inputs = Array.from(document.querySelectorAll('input[id^=bulk_amt_]'))
+    // Two independent panels (disc + cat). Each panel's sliders share a budget
+    // = bulk_total_amount. We hook ionRangeSlider's onChange callback (fires
+    // on every pixel of drag) and cap the moved slider to (total - sum_others)
+    // BEFORE the value propagates anywhere.
+    function getBulkTotal() {
+      var el = document.getElementById('bulk_total_amount');
+      return el ? (parseFloat(el.value) || 0) : 0;
+    }
+
+    // Set a slider's value and ALSO push it to Shiny — irs.update() alone
+    // bypasses Shiny's input binding so the server keeps a stale value.
+    function setSliderValue(input, val) {
+      var irs = $(input).data('ionRangeSlider');
+      irs.update({ from: val });
+      Shiny.setInputValue(input.id, val, { priority: 'event' });
+    }
+
+    function wireBulkClamp(prefix) {
+      var inputs = Array.from(document.querySelectorAll('input[id^=' + prefix + ']'))
                         .filter(function(el) { return $(el).data('ionRangeSlider'); });
       if (!inputs.length) return;
 
-      function getTotal() {
-        var el = document.getElementById('bulk_total_amount');
-        return el ? (parseFloat(el.value) || 0) : 0;
-      }
-
-      function getVals() {
+      function vals() {
         return inputs.map(function(el) {
           return parseFloat($(el).data('ionRangeSlider').result.from) || 0;
         });
       }
 
       function clamp(idx) {
-        var tot  = getTotal();
-        var vals = getVals();
-        var sumOthers = vals.reduce(function(s, v, j) { return j === idx ? s : s + v; }, 0);
-        var cap = Math.max(0, tot - sumOthers);
-        if (vals[idx] > cap) {
-          $(inputs[idx]).data('ionRangeSlider').update({ from: cap });
+        var v = vals();
+        var sumOthers = v.reduce(function(s, x, j) { return j === idx ? s : s + x; }, 0);
+        var cap = Math.max(0, getBulkTotal() - sumOthers);
+        if (v[idx] > cap) {
+          setSliderValue(inputs[idx], cap);
         }
       }
 
-      // Remove old handlers then re-attach
+      // Clamp ALL sliders in this panel (used when total changes downward)
+      function clampAll() {
+        var t = getBulkTotal();
+        var v = vals();
+        var remaining = t;
+        v.forEach(function(x, i) {
+          if (x <= remaining) {
+            remaining -= x;
+          } else {
+            setSliderValue(inputs[i], Math.max(0, remaining));
+            remaining = 0;
+          }
+        });
+      }
+
+      // Sync EVERY slider's current visual value to Shiny — wipes stale residue
+      // left over from prior renders / pre-clamp drags.
+      function syncAllToShiny() {
+        inputs.forEach(function(el) {
+          var v = parseFloat($(el).data('ionRangeSlider').result.from) || 0;
+          Shiny.setInputValue(el.id, v, { priority: 'event' });
+        });
+      }
+      syncAllToShiny();
+
       inputs.forEach(function(el, i) {
-        $(el).off('change.bulkclamp').on('change.bulkclamp', function() { clamp(i); });
+        var $el = $(el);
+        var irs = $el.data('ionRangeSlider');
+        var prevOnChange = irs.options.onChange;
+        irs.update({
+          onChange: function(data) {
+            clamp(i);
+            if (prevOnChange) prevOnChange(data);
+          }
+        });
+        $el.off('change.bulkclamp').on('change.bulkclamp', function() { clamp(i); });
       });
+
+      window['_bulkClampAll_' + prefix] = clampAll;
     }
 
+    function wireBulkClampAll() {
+      wireBulkClamp('bulk_disc_amt_');
+      wireBulkClamp('bulk_cat_amt_');
+    }
+
+    // When total amount changes, force-clamp every slider in both panels
+    $(document).on('input change', '#bulk_total_amount', function() {
+      if (window['_bulkClampAll_bulk_disc_amt_']) window['_bulkClampAll_bulk_disc_amt_']();
+      if (window['_bulkClampAll_bulk_cat_amt_'])  window['_bulkClampAll_bulk_cat_amt_']();
+    });
+
     $(document).on('shiny:value', function(e) {
-      if (e.name === 'bulk_sliders_ui') setTimeout(wireBulkSliderClamping, 80);
+      if (e.name === 'bulk_disc_panel' || e.name === 'bulk_cat_panel') {
+        setTimeout(wireBulkClampAll, 80);
+      }
     });
 
   ")),
@@ -499,15 +555,24 @@ ui <- page_fluid(
                         tags$button(id = "bulk_mult_mix_btn", class = "", type = "button",
                                     onclick = "var cur=document.getElementById('bulk_mult_mix_btn').className==='sec-active'; document.getElementById('bulk_mult_mix_btn').className=cur?'':'sec-active'; document.getElementById('bulk_mult_primary_btn').className=cur?'sec-active':''; Shiny.setInputValue('bulk_mult_method',cur?'primary':'mixture');", "Mixture")))),
 
-            # ── STEP 1: Org type slots ────────────────────────────────────────
-            div(style = "font-size:0.65rem; font-weight:800; text-transform:uppercase; color:#aaa; margin-bottom:6px; letter-spacing:0.5px;", "Step 1 — Org Types"),
-            uiOutput("bulk_types_ui"),
-            tags$button("+ Add Org Type",
-                        style = "background:#1a1a2e; color:#fff; border:none; border-radius:6px; padding:8px 14px; font-size:0.75rem; font-weight:700; cursor:pointer; width:100%; margin-bottom:10px; letter-spacing:0.3px;",
-                        onclick = "Shiny.setInputValue('bulk_row_add', Math.random(), {priority:'event'});"),
+            # ── STEP 1: Total amount ──────────────────────────────────────────
+            div(style = "font-size:0.65rem; font-weight:800; text-transform:uppercase; color:#aaa; margin-bottom:6px; letter-spacing:0.5px;",
+                "Step 1 — Total"),
+            div(style = "background:#f8f7f4; border-radius:8px; padding:10px; margin-bottom:12px;",
+                uiOutput("bulk_total_ui")),
 
-            # ── STEP 2: Total + per-type spend sliders ───────────────────────
-            uiOutput("bulk_sliders_ui"),
+            # ── STEP 2: Discipline + Org Type composition ─────────────────────
+            div(style = "font-size:0.65rem; font-weight:800; text-transform:uppercase; color:#aaa; margin-bottom:6px; letter-spacing:0.5px;",
+                "Step 2 — Composition"),
+            div(style = "font-size:0.7rem; color:#777; margin-bottom:8px; line-height:1.4;",
+                "Allocate the total across disciplines AND across org types — each side must sum to the total. The two sides combine 50/50 in the multiplier."),
+            div(style = "display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;",
+                div(style = "background:#f8f7f4; border-radius:8px; padding:10px;",
+                    div(style = "font-size:0.68rem; font-weight:800; color:#888; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px;", "Disciplines"),
+                    uiOutput("bulk_disc_panel")),
+                div(style = "background:#f8f7f4; border-radius:8px; padding:10px;",
+                    div(style = "font-size:0.68rem; font-weight:800; color:#888; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px;", "Org Types"),
+                    uiOutput("bulk_cat_panel"))),
             div(style = "margin-top:auto; padding-top:12px;",
                 actionButton("bulk_add", "Add Group to Portfolio",
                              style = sprintf("width:100%%; background:%s; color:%s; border:none; border-radius:8px; padding:11px 0; font-weight:700; font-size:0.85rem; letter-spacing:0.3px; cursor:pointer;", PINK, WHITE)))))

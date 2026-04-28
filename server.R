@@ -278,11 +278,11 @@ server <- function(input, output, session) {
     stringsAsFactors = FALSE
   ))
 
-  # Step 1 staging: list of org types (no counts yet)
-  bulk_types <- reactiveVal(data.frame(
-    cat = character(), disc = character(),
-    stringsAsFactors = FALSE
-  ))
+  # Group entry — independent discipline & category share lists
+  # Each is a character vector of names that have been "added" to the group.
+  # Their per-row percent inputs live as input$bulk_disc_pct_<name> / input$bulk_cat_pct_<name>.
+  bulk_disc_list <- reactiveVal(character())
+  bulk_cat_list  <- reactiveVal(character())
   
   # Store multiplier detail per org id (codes, weights, per-code mults, effective mults)
   port_mult_detail <- reactiveVal(list())
@@ -300,183 +300,267 @@ server <- function(input, output, session) {
     updateSelectInput(session, "port_cat", choices = valid_cats, selected = cur)
   }, ignoreInit = TRUE)
   
-  # ── STEP 1: Org type slots (blank rows, user picks type inline) ───────────
-  # Add a blank slot (defaults to first valid cat/disc)
-  observeEvent(input$bulk_row_add, {
-    bulk_types(rbind(bulk_types(), data.frame(
-      cat = "", disc = "",
-      stringsAsFactors = FALSE
-    )))
+  # ── STEP 1: Add disciplines / categories (multi-select) ───────────────────
+  observeEvent(input$bulk_disc_add, {
+    sel <- input$bulk_disc_picker
+    if (is.null(sel) || length(sel) == 0) return()
+    sel <- sel[nzchar(sel)]
+    cur <- bulk_disc_list()
+    bulk_disc_list(unique(c(cur, sel)))
   }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
-  # Remove a slot by index
-  observeEvent(input$bulk_type_remove, {
-    idx <- as.integer(input$bulk_type_remove)
-    df  <- bulk_types()
-    if (idx >= 1 && idx <= nrow(df)) bulk_types(df[-idx, , drop = FALSE])
+  observeEvent(input$bulk_cat_add, {
+    sel <- input$bulk_cat_picker
+    if (is.null(sel) || length(sel) == 0) return()
+    sel <- sel[nzchar(sel)]
+    cur <- bulk_cat_list()
+    bulk_cat_list(unique(c(cur, sel)))
   }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
-  # Render slots — cascading handled inline by reading live input$bulk_cat_i
-  # Also depend on cat inputs so disc choices update when cat changes
-  output$bulk_types_ui <- renderUI({
-    df <- bulk_types()
-    # Take dependency on all current cat selections so renderUI re-runs on cat change
-    lapply(seq_len(nrow(df)), function(i) input[[paste0("bulk_cat_", i)]])
-    if (nrow(df) == 0) return(
-      div(style = "font-size:0.72rem; color:#bbb; text-align:center; padding:6px 0 8px;",
-          "No slots yet — click + Add Slot")
-    )
-    rows <- lapply(seq_len(nrow(df)), function(i) {
-      cur_cat <- input[[paste0("bulk_cat_", i)]] %||% df$cat[i]
-      # Cat choices: blank placeholder + all categories
-      cat_choices <- c("— Select Org Type —" = "", CALC_CATEGORIES)
-      # Disc choices depend on whether a cat is selected
-      if (nzchar(cur_cat)) {
-        valid_discs <- VALID_COMBOS_FULL %>% filter(Category == cur_cat) %>% pull(Discipline) %>% sort()
-        disc_choices <- c("— Select Discipline —" = "", valid_discs)
-      } else {
-        disc_choices <- c("— Select Org Type first —" = "")
-      }
-      cur_disc <- input[[paste0("bulk_disc_", i)]] %||% df$disc[i]
-      if (!cur_disc %in% disc_choices) cur_disc <- ""
-      div(style = "background:white; border-radius:8px; padding:8px 10px; margin-bottom:6px;",
-          div(style = "display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;",
-              div(style = "font-size:0.68rem; font-weight:800; color:#aaa; text-transform:uppercase; letter-spacing:0.4px;",
-                  paste0("Combo ", i)),
-              tags$button("×",
-                          style = "background:transparent; border:none; color:#ccc; font-size:1rem; cursor:pointer; padding:0; line-height:1;",
-                          onclick = sprintf("Shiny.setInputValue('bulk_type_remove', %d, {priority:'event'});", i))),
-          div(style = "font-size:0.65rem; color:#bbb; margin-bottom:5px;", "Org Type + Discipline together determine the multiplier"),
-          div(style = "display:grid; grid-template-columns:1fr 1fr; gap:6px;",
-              selectInput(paste0("bulk_cat_",  i), NULL,
-                          choices = cat_choices,  selected = cur_cat, width = "100%"),
-              selectInput(paste0("bulk_disc_", i), NULL,
-                          choices = disc_choices, selected = cur_disc, width = "100%")))
-    })
-    tagList(rows)
-  })
+  observeEvent(input$bulk_disc_remove, {
+    nm <- input$bulk_disc_remove
+    bulk_disc_list(setdiff(bulk_disc_list(), nm))
+  }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
-  # ── STEP 2: Total expenditure + per-type dollar sliders ───────────────────
-  # Re-renders only when slots change, total changes, or base metric changes.
-  # CRITICAL: do NOT read input$bulk_amt_i inside here — that causes a re-render
-  # on every drag which resets slider values to 0. Use isolate() for labels only.
-  output$bulk_sliders_ui <- renderUI({
-    df  <- bulk_types()
-    if (nrow(df) == 0) return(NULL)
-    use_rev <- isTRUE(input$bulk_base_metric == "rev")
-    tot  <- as.numeric(input$bulk_total_amount %||% 1000000)
-    if (is.na(tot) || tot <= 0) tot <- 1000000
+  observeEvent(input$bulk_cat_remove, {
+    nm <- input$bulk_cat_remove
+    bulk_cat_list(setdiff(bulk_cat_list(), nm))
+  }, ignoreInit = TRUE, ignoreNULL = TRUE)
+
+  # Helper: safe HTML id from name (replace non-alphanumeric with _)
+  bulk_id <- function(prefix, name) paste0(prefix, gsub("[^A-Za-z0-9]", "_", name))
+
+  # Render rows (dollar slider per item) — common helper.
+  # CRITICAL: do NOT read input$bulk_*_amt_* inside here — that causes a
+  # re-render on every drag → snap to 0. Re-renders only when items list or
+  # total amount changes; live status reads slider values reactively.
+  bulk_render_panel <- function(items, prefix, available_choices, picker_id, add_id, remove_id, status_id, empty_msg, picker_label, total_amt) {
+    n <- length(items)
+    tot  <- if (is.na(total_amt) || total_amt <= 0) 1000000 else total_amt
     step <- max(round(tot / 1000), 1)
-    fmt  <- function(x) paste0("$", formatC(round(x), format = "f", digits = 0, big.mark = ","))
-    div(style = "margin-bottom:10px;",
-        div(style = "font-size:0.65rem; font-weight:800; text-transform:uppercase; color:#aaa; margin-bottom:6px; letter-spacing:0.5px;",
-            "Step 2 — Allocate Spending"),
-        div(style = "background:#f8f7f4; border-radius:8px; padding:10px;",
-            div(style = "margin-bottom:12px;",
-                tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;",
-                           if (use_rev) "Total Revenue ($)" else "Total Expenditures ($)"),
-                numericInput("bulk_total_amount", NULL, value = tot, min = 1, step = 1, width = "100%")),
-            lapply(seq_len(nrow(df)), function(i) {
-              live_cat  <- isolate(input[[paste0("bulk_cat_",  i)]]) %||% df$cat[i]
-              live_disc <- isolate(input[[paste0("bulk_disc_", i)]]) %||% df$disc[i]
-              div(style = "margin-bottom:10px;",
-                  tags$label(style = "font-size:0.75rem; font-weight:700; color:#555; display:block; margin-bottom:2px;",
-                             paste0(live_disc, " (", live_cat, ")")),
-                  sliderInput(paste0("bulk_amt_", i), NULL,
-                              min = 0, max = tot, value = 0,
-                              step = step, width = "100%",
-                              ticks = FALSE,
-                              pre = "$", sep = ","))
-            }),
-            uiOutput("bulk_alloc_status")))
-  }) |> bindEvent(bulk_types(), input$bulk_total_amount, input$bulk_base_metric)
+    rows <- if (n == 0) {
+      div(style = "font-size:0.7rem; color:#bbb; text-align:center; padding:8px 0;", empty_msg)
+    } else {
+      lapply(items, function(nm) {
+        div(style = "display:grid; grid-template-columns:1fr 22px; gap:4px; align-items:center; margin-bottom:8px;",
+            div(
+              div(style = "font-size:0.75rem; color:#444; font-weight:600; margin-bottom:0px;", nm),
+              sliderInput(bulk_id(prefix, nm), NULL,
+                          min = 0, max = tot, value = 0,
+                          step = step, width = "100%",
+                          ticks = FALSE, pre = "$", sep = ",")),
+            tags$button("×",
+                        style = "background:transparent; border:none; color:#ccc; font-size:1rem; cursor:pointer; padding:0; align-self:start; margin-top:6px;",
+                        onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority:'event'});",
+                                          remove_id, gsub("'", "\\\\'", nm))))
+      })
+    }
+    tagList(
+      tagList(rows),
+      div(style = "margin-top:8px;",
+          selectInput(picker_id, NULL,
+                      choices = available_choices,
+                      selected = character(0),
+                      multiple = TRUE,
+                      width = "100%",
+                      selectize = TRUE),
+          tags$button(picker_label,
+                      style = "background:#1a1a2e; color:#fff; border:none; border-radius:6px; padding:6px 14px; font-size:0.72rem; font-weight:700; cursor:pointer; margin-top:6px; width:100%; letter-spacing:0.3px;",
+                      onclick = sprintf("Shiny.setInputValue('%s', Math.random(), {priority:'event'});", add_id))),
+      uiOutput(status_id))
+  }
 
-  # Live allocation status — reads slider values reactively (this is fine, it's a separate output)
-  output$bulk_alloc_status <- renderUI({
-    df  <- bulk_types()
-    if (nrow(df) == 0) return(NULL)
+  # Disciplines panel
+  output$bulk_disc_panel <- renderUI({
+    discs <- bulk_disc_list()
+    available <- setdiff(CALC_DISCIPLINES, discs)
     tot <- as.numeric(input$bulk_total_amount %||% 1000000)
-    if (is.na(tot) || tot <= 0) return(NULL)
-    allocated <- sum(sapply(seq_len(nrow(df)), function(i) as.numeric(input[[paste0("bulk_amt_", i)]] %||% 0)))
-    remaining <- tot - allocated
+    bulk_render_panel(
+      items = discs, prefix = "bulk_disc_amt_",
+      available_choices = available,
+      picker_id = "bulk_disc_picker", add_id = "bulk_disc_add",
+      remove_id = "bulk_disc_remove", status_id = "bulk_disc_status",
+      empty_msg = "No disciplines yet — pick some below",
+      picker_label = "+ Add Selected Disciplines",
+      total_amt = tot)
+  }) |> bindEvent(bulk_disc_list(), input$bulk_total_amount)
+
+  # Categories panel
+  output$bulk_cat_panel <- renderUI({
+    cats <- bulk_cat_list()
+    available <- setdiff(CALC_CATEGORIES, cats)
+    tot <- as.numeric(input$bulk_total_amount %||% 1000000)
+    bulk_render_panel(
+      items = cats, prefix = "bulk_cat_amt_",
+      available_choices = available,
+      picker_id = "bulk_cat_picker", add_id = "bulk_cat_add",
+      remove_id = "bulk_cat_remove", status_id = "bulk_cat_status",
+      empty_msg = "No org types yet — pick some below",
+      picker_label = "+ Add Selected Org Types",
+      total_amt = tot)
+  }) |> bindEvent(bulk_cat_list(), input$bulk_total_amount)
+
+  # Live $ allocation status for each panel
+  amt_status <- function(items, prefix, total) {
+    if (length(items) == 0) return(NULL)
+    if (is.na(total) || total <= 0) return(NULL)
+    allocated <- sum(sapply(items, function(nm) as.numeric(input[[bulk_id(prefix, nm)]] %||% 0)))
+    remaining <- total - allocated
     fmt <- function(x) formatC(round(x), format = "f", digits = 0, big.mark = ",")
-    col <- if (remaining == 0) "#2e7d32" else if (remaining > 0) "#e65100" else "#c62828"
-    msg <- if (remaining == 0) {
+    col <- if (abs(remaining) < 0.5) "#2e7d32"
+           else if (remaining > 0) "#e65100"
+           else "#c62828"
+    msg <- if (abs(remaining) < 0.5) {
       paste0("$", fmt(allocated), " allocated ✓")
     } else if (remaining > 0) {
-      paste0("$", fmt(allocated), " / $", fmt(tot), " — $", fmt(remaining), " unallocated")
+      paste0("$", fmt(allocated), " / $", fmt(total), " — $", fmt(remaining), " left")
     } else {
       paste0("Over by $", fmt(-remaining))
     }
-    div(style = sprintf("font-size:0.72rem; font-weight:700; color:%s; margin-top:6px;", col), msg)
+    div(style = sprintf("font-size:0.72rem; font-weight:700; color:%s; margin-top:6px; text-align:right;", col), msg)
+  }
+  output$bulk_disc_status <- renderUI({
+    tot <- as.numeric(input$bulk_total_amount %||% 0)
+    if (is.na(tot) || tot <= 0) return(NULL)
+    amt_status(bulk_disc_list(), "bulk_disc_amt_", tot)
+  })
+  output$bulk_cat_status <- renderUI({
+    tot <- as.numeric(input$bulk_total_amount %||% 0)
+    if (is.na(tot) || tot <= 0) return(NULL)
+    amt_status(bulk_cat_list(), "bulk_cat_amt_", tot)
   })
 
-  output$bulk_amount_ui <- renderUI({ NULL })
+  # ── STEP 2: Total expenditure / revenue ───────────────────────────────────
+  output$bulk_total_ui <- renderUI({
+    use_rev <- isTRUE(input$bulk_base_metric == "rev")
+    div(
+      tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;",
+                 if (use_rev) "Total Revenue ($)" else "Total Expenditures ($)"),
+      numericInput("bulk_total_amount", NULL,
+                   value = as.numeric(isolate(input$bulk_total_amount) %||% 1000000),
+                   min = 1, step = 1, width = "100%"))
+  })
 
   # ── Commit group to portfolio ───────────────────────────────────────────────
+  # Group entry expands to the cross-product of disc shares × cat shares,
+  # producing a list of (Category, Discipline, share) tuples — same as if the
+  # user had entered N individual orgs at those proportions. Each tuple uses
+  # its combo's ind_primary (Primary mode) or splits share 50/50 across cat +
+  # disc codes (Mixture mode), matching the One-at-a-Time path exactly.
   observeEvent(input$bulk_add, {
-    df    <- bulk_types()
-    if (nrow(df) == 0) return()
+    discs <- bulk_disc_list()
+    cats  <- bulk_cat_list()
+    if (length(discs) == 0 && length(cats) == 0) {
+      showNotification("Add at least one discipline or org type before adding to portfolio.", type = "warning", duration = 4)
+      return()
+    }
+
     total <- as.numeric(input$bulk_total_amount %||% 1000000)
-    if (is.na(total) || total <= 0) total <- 1000000
+    if (is.na(total) || total <= 0) {
+      showNotification("Enter a total expenditure / revenue amount.", type = "warning", duration = 4)
+      return()
+    }
     prov    <- input$bulk_prov
     yr      <- as.numeric(input$bulk_year)
     use_rev <- isTRUE(input$bulk_base_metric == "rev")
-
-    live_cats  <- sapply(seq_len(nrow(df)), function(k) input[[paste0("bulk_cat_",  k)]] %||% df$cat[k])
-    live_discs <- sapply(seq_len(nrow(df)), function(k) input[[paste0("bulk_disc_", k)]] %||% df$disc[k])
-
-    # Drop any slots where cat or disc is still blank
-    complete <- nzchar(live_cats) & nzchar(live_discs)
-    if (!any(complete)) return()
-    live_cats  <- live_cats[complete]
-    live_discs <- live_discs[complete]
-    idx_complete <- which(complete)
-
-    amts <- sapply(idx_complete, function(i) as.numeric(input[[paste0("bulk_amt_", i)]] %||% 0))
-    allocated <- sum(amts)
-    if (allocated <= 0) {
-      showNotification("Allocate spending across org types before adding to portfolio.", type = "warning", duration = 4)
-      return()
-    }
-    if (abs(allocated - total) > 0.01) {
-      showNotification(
-        paste0("$", formatC(round(total - allocated), format = "f", digits = 0, big.mark = ","), " is still unallocated — distribute all spending before adding."),
-        type = "warning", duration = 5)
-      return()
-    }
-    slot_weights <- amts / sum(amts)
     use_mix <- isTRUE(input$bulk_mult_method == "mixture")
 
-    # Build expanded ind_codes + weights — mixture expands each slot to all its codes
-    exp_codes   <- c()
-    exp_weights <- c()
-    for (k in seq_along(live_cats)) {
-      combo_row <- combo_map_v2 %>% filter(Category == live_cats[k], Discipline == live_discs[k])
-      if (nrow(combo_row) == 0) {
-        exp_codes   <- c(exp_codes, "BS71A000")
-        exp_weights <- c(exp_weights, slot_weights[k])
-      } else if (use_mix) {
-        codes_k <- combo_row$ind_all[[1]]
-        exp_codes   <- c(exp_codes, codes_k)
-        exp_weights <- c(exp_weights, rep(slot_weights[k] / length(codes_k), length(codes_k)))
+    # Read live dollar inputs
+    disc_amts <- sapply(discs, function(nm) as.numeric(input[[bulk_id("bulk_disc_amt_", nm)]] %||% 0))
+    cat_amts  <- sapply(cats,  function(nm) as.numeric(input[[bulk_id("bulk_cat_amt_",  nm)]] %||% 0))
+
+    # Validate: each non-empty side must sum to total
+    fmt <- function(x) formatC(round(x), format = "f", digits = 0, big.mark = ",")
+    if (length(discs) > 0 && abs(sum(disc_amts) - total) > 0.5) {
+      showNotification(paste0("Disciplines: $", fmt(sum(disc_amts)),
+                              " allocated of $", fmt(total), " — must equal total."),
+                       type = "warning", duration = 5); return()
+    }
+    if (length(cats) > 0 && abs(sum(cat_amts) - total) > 0.5) {
+      showNotification(paste0("Org types: $", fmt(sum(cat_amts)),
+                              " allocated of $", fmt(total), " — must equal total."),
+                       type = "warning", duration = 5); return()
+    }
+
+    # Side share vectors (each normalized to 1)
+    disc_w <- if (length(discs) > 0) disc_amts / sum(disc_amts) else numeric(0)
+    cat_w  <- if (length(cats)  > 0) cat_amts  / sum(cat_amts)  else numeric(0)
+
+    # Build the implied list of (Category, Discipline, share) tuples
+    # Three cases:
+    #   (a) both sides given → cross-product, share = disc_w × cat_w
+    #   (b) only disciplines → treat each disc as its own org with no cat (use disc code)
+    #   (c) only cats        → treat each cat as its own org with no disc (use cat code; Arts Org skipped)
+    if (length(discs) > 0 && length(cats) > 0) {
+      tuples <- expand.grid(disc_idx = seq_along(discs), cat_idx = seq_along(cats),
+                            stringsAsFactors = FALSE)
+      tuples$Discipline <- discs[tuples$disc_idx]
+      tuples$Category   <- cats[tuples$cat_idx]
+      tuples$share      <- disc_w[tuples$disc_idx] * cat_w[tuples$cat_idx]
+    } else if (length(discs) > 0) {
+      tuples <- data.frame(Discipline = discs, Category = NA_character_,
+                           share = disc_w, stringsAsFactors = FALSE)
+    } else {
+      tuples <- data.frame(Discipline = NA_character_, Category = cats,
+                           share = cat_w, stringsAsFactors = FALSE)
+    }
+
+    # For each tuple, look up codes from combo_map_v2
+    tuples$disc_code <- DISC_CODE$disc_code[match(tuples$Discipline, DISC_CODE$Discipline)]
+    tuples$cat_code  <- CAT_CODE$cat_code[ match(tuples$Category,   CAT_CODE$Category)]
+
+    # Build (code, weight) pairs per tuple, applying Primary or Mixture rule
+    all_codes <- c()
+    all_w     <- c()
+    for (i in seq_len(nrow(tuples))) {
+      sh <- tuples$share[i]
+      dc <- tuples$disc_code[i]
+      cc <- tuples$cat_code[i]
+      if (use_mix) {
+        # Mixture: 50/50 of cat + disc (or 100% disc if no cat code = Arts Org / disc-only)
+        if (!is.na(cc) && !is.na(dc)) {
+          all_codes <- c(all_codes, cc, dc); all_w <- c(all_w, sh * 0.5, sh * 0.5)
+        } else if (!is.na(dc)) {
+          all_codes <- c(all_codes, dc);     all_w <- c(all_w, sh)
+        } else if (!is.na(cc)) {
+          all_codes <- c(all_codes, cc);     all_w <- c(all_w, sh)
+        }
       } else {
-        exp_codes   <- c(exp_codes, combo_row$ind_primary[1])
-        exp_weights <- c(exp_weights, slot_weights[k])
+        # Primary: cat code (the org type), or disc code if cat is missing/Arts Org
+        primary <- if (!is.na(cc)) cc else dc
+        if (!is.na(primary)) {
+          all_codes <- c(all_codes, primary); all_w <- c(all_w, sh)
+        }
       }
     }
-    # Collapse duplicate codes by summing weights
-    unique_codes <- unique(exp_codes)
-    weights <- sapply(unique_codes, function(c) sum(exp_weights[exp_codes == c]))
-    ind_codes <- unique_codes
 
-    method_lbl <- if (use_mix) "Spend-weighted blend — Mixture" else "Spend-weighted blend — Primary"
+    if (length(all_codes) == 0) {
+      showNotification("Selected only Arts Organization with no disciplines — add a discipline.", type = "warning", duration = 5)
+      return()
+    }
+
+    # Collapse duplicate codes
+    ind_codes <- unique(all_codes)
+    weights   <- sapply(ind_codes, function(c) sum(all_w[all_codes == c]))
+    weights   <- weights / sum(weights)  # renormalize (Arts Org tuples may drop)
+
+    method_lbl <- if (use_mix) "Group blend — Mixture (50/50 cat × disc per combo)"
+                  else        "Group blend — Primary (cat code per combo)"
     m            <- get_mult_row_weighted(prov, yr, ind_codes, weights)
     total_m      <- total / 1e6
     ind_row_list <- lapply(ind_codes, function(ic) get_mult_row(prov, yr, ic))
 
     org_id   <- paste0("p_", as.integer(Sys.time()), "_", sample(1000, 1))
-    org_name <- paste0("Group — ", length(live_cats), " type", if (length(live_cats) != 1) "s" else "", " (", prov, ", ", yr, ")")
+    org_name <- paste0("Group — ", length(discs), " disc × ", length(cats), " type",
+                       if (length(cats) != 1) "s" else "", " (", prov, ", ", yr, ")")
+
+    # Store breakdown for detail panel
+    disc_breakdown <- if (length(discs) > 0) data.frame(name = discs, pct = disc_w * 100,
+                                                        code = DISC_CODE$disc_code[match(discs, DISC_CODE$Discipline)],
+                                                        stringsAsFactors = FALSE) else NULL
+    cat_breakdown  <- if (length(cats) > 0)  data.frame(name = cats, pct = cat_w * 100,
+                                                        code = CAT_CODE$cat_code[match(cats, CAT_CODE$Category)],
+                                                        stringsAsFactors = FALSE) else NULL
 
     dl <- port_mult_detail()
     dl[[org_id]] <- list(
@@ -488,13 +572,17 @@ server <- function(input, output, session) {
       method      = method_lbl,
       count       = NA,
       amt_per_org = NA,
-      group_rows  = df
+      disc_breakdown = disc_breakdown,
+      cat_breakdown  = cat_breakdown,
+      tuples         = tuples,
+      use_mix        = use_mix
     )
     port_mult_detail(dl)
 
     new_row <- data.frame(
       id = org_id, name = org_name, count = NA, amount = total,
-      prov = prov, cat = "Mixed", disc = paste(unique(live_discs), collapse = " / "),
+      prov = prov, cat = "Mixed",
+      disc = paste(c(discs, cats), collapse = " / "),
       yr = yr, base = if (use_rev) "Rev" else "Exp",
       mult_lbl = paste(ind_codes, collapse = " + "),
       gdp_d  = total   * m$gdp_direct[1],
@@ -510,7 +598,8 @@ server <- function(input, output, session) {
       stringsAsFactors = FALSE
     )
     port_orgs(rbind(port_orgs(), new_row))
-    bulk_types(bulk_types()[0, , drop = FALSE])  # clear
+    bulk_disc_list(character())
+    bulk_cat_list(character())
   })
 
   # Amount input with dynamic label
@@ -826,24 +915,81 @@ server <- function(input, output, session) {
         })
         
         base_lbl <- r$base
-        # For group entries, build a per-combo breakdown line
-        group_breakdown <- if (!is.null(d$group_rows) && nrow(d$group_rows) > 0 && !is.null(d$weights)) {
-          gr   <- d$group_rows[nzchar(d$group_rows$cat) & nzchar(d$group_rows$disc), ]
-          wts  <- d$weights
-          total_amt_grp <- r$amount
-          fmt  <- function(x) paste0("$", formatC(round(x), format = "f", digits = 0, big.mark = ","))
-          combo_lines <- lapply(seq_len(nrow(gr)), function(k) {
-            tags$div(style = "display:flex; justify-content:space-between; padding:2px 0;",
-                     tags$span(style = "color:#444; font-weight:600;",
-                               paste0(gr$disc[k], " \u00d7 ", gr$cat[k])),
-                     tags$span(style = "color:#888;",
-                               paste0(fmt(wts[k] * total_amt_grp), " (", round(wts[k] * 100), "%)")))
-          })
-          tagList(
-            tags$div(style = sprintf("font-size:0.68rem; font-weight:800; color:%s; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:4px;", NAVY), "Composition"),
-            tagList(combo_lines),
-            tags$hr(style = "border:none; border-top:1px solid #e0ddd8; margin:8px 0;")
-          )
+        # For group entries, show: 1) input shares, 2) cross-product combos, 3) per-combo code split
+        group_breakdown <- if (!is.null(d$disc_breakdown) || !is.null(d$cat_breakdown)) {
+          fmt_pct <- function(p) paste0(round(p, 1), "%")
+          fmt_dol <- function(x) paste0("$", formatC(round(x), format="f", digits=0, big.mark=","))
+          total_amt <- r$amount
+
+          # Block 1: input shares (what user entered)
+          disc_block <- if (!is.null(d$disc_breakdown) && nrow(d$disc_breakdown) > 0) {
+            tagList(
+              tags$div(style = sprintf("font-size:0.68rem; font-weight:800; color:%s; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:4px;", NAVY),
+                       "Discipline allocation"),
+              lapply(seq_len(nrow(d$disc_breakdown)), function(k) {
+                tags$div(style = "display:flex; justify-content:space-between; padding:2px 0;",
+                         tags$span(style = "color:#444;", d$disc_breakdown$name[k]),
+                         tags$span(style = "color:#888;",
+                                   paste0(fmt_dol(d$disc_breakdown$pct[k]/100 * total_amt),
+                                          " (", fmt_pct(d$disc_breakdown$pct[k]), ")")))
+              }))
+          } else NULL
+          cat_block <- if (!is.null(d$cat_breakdown) && nrow(d$cat_breakdown) > 0) {
+            tagList(
+              tags$div(style = sprintf("font-size:0.68rem; font-weight:800; color:%s; text-transform:uppercase; letter-spacing:0.4px; margin:8px 0 4px;", NAVY),
+                       "Org type allocation"),
+              lapply(seq_len(nrow(d$cat_breakdown)), function(k) {
+                code <- d$cat_breakdown$code[k]
+                tail_lbl <- if (is.na(code)) " (Arts Org \u2192 uses discipline code)" else ""
+                tags$div(style = "display:flex; justify-content:space-between; padding:2px 0;",
+                         tags$span(style = "color:#444;", paste0(d$cat_breakdown$name[k], tail_lbl)),
+                         tags$span(style = "color:#888;",
+                                   paste0(fmt_dol(d$cat_breakdown$pct[k]/100 * total_amt),
+                                          " (", fmt_pct(d$cat_breakdown$pct[k]), ")")))
+              }))
+          } else NULL
+
+          # Block 2: cross-product combos (what the group expands to)
+          combo_block <- if (!is.null(d$tuples) && nrow(d$tuples) > 0) {
+            tup <- d$tuples
+            method_note <- if (isTRUE(d$use_mix))
+                             "Mixture: each combo splits 50/50 across cat + disc codes"
+                           else
+                             "Primary: each combo uses its category code (or discipline if Arts Org)"
+            combo_rows <- lapply(seq_len(nrow(tup)), function(k) {
+              cat_lbl  <- if (is.na(tup$Category[k]))   "(no org type)"   else tup$Category[k]
+              disc_lbl <- if (is.na(tup$Discipline[k])) "(no discipline)" else tup$Discipline[k]
+              code_str <- if (isTRUE(d$use_mix)) {
+                if (!is.na(tup$cat_code[k]) && !is.na(tup$disc_code[k]))
+                  paste0("\u00bd ", tup$cat_code[k], " + \u00bd ", tup$disc_code[k])
+                else if (!is.na(tup$disc_code[k])) tup$disc_code[k]
+                else if (!is.na(tup$cat_code[k]))  tup$cat_code[k]
+                else "(none)"
+              } else {
+                primary <- if (!is.na(tup$cat_code[k])) tup$cat_code[k] else tup$disc_code[k]
+                if (is.na(primary)) "(none)" else primary
+              }
+              tags$div(style = "display:grid; grid-template-columns:1fr auto; gap:8px; padding:3px 0; border-bottom:1px dashed #e8e5e0;",
+                       div(tags$div(style = "color:#444; font-weight:600;",
+                                    paste0(cat_lbl, " \u00d7 ", disc_lbl)),
+                           tags$div(style = "color:#999; font-family:monospace; font-size:0.7rem;",
+                                    code_str)),
+                       div(style = "text-align:right;",
+                           tags$div(style = "color:#444; font-weight:700;",
+                                    fmt_dol(tup$share[k] * total_amt)),
+                           tags$div(style = "color:#999;",
+                                    fmt_pct(tup$share[k] * 100))))
+            })
+            tagList(
+              tags$div(style = sprintf("font-size:0.68rem; font-weight:800; color:%s; text-transform:uppercase; letter-spacing:0.4px; margin:10px 0 4px;", NAVY),
+                       paste0("Implied combos (", nrow(tup), ")")),
+              tags$div(style = "font-size:0.68rem; color:#888; margin-bottom:6px; font-style:italic;",
+                       method_note),
+              tagList(combo_rows))
+          } else NULL
+
+          tagList(disc_block, cat_block, combo_block,
+                  tags$hr(style = "border:none; border-top:1px solid #e0ddd8; margin:10px 0;"))
         } else NULL
 
         tags$div(style = "padding:10px 16px; background:#f8f7f4; font-size:0.72rem; color:#555;",
