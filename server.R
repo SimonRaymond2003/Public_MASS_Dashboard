@@ -1072,6 +1072,7 @@ server <- function(input, output, session) {
     
     port_orgs(rbind(port_orgs(), new_row))
     session$sendCustomMessage("resetPortName", TRUE)
+    if (use_custom) session$sendCustomMessage("resetPortCustomCodes", TRUE)
   })
   
   # Clear all

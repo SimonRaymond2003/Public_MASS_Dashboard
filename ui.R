@@ -197,6 +197,12 @@ ui <- page_fluid(
       var el = document.getElementById('port_name');
       if (el) { el.value = ''; Shiny.setInputValue('port_name', ''); }
     });
+    Shiny.addCustomMessageHandler('resetPortCustomCodes', function(msg) {
+      for (var i = 1; i <= 5; i++) {
+        Shiny.setInputValue('port_code_' + i, '__placeholder__');
+      }
+      Shiny.setInputValue('port_code_clear', Math.random());
+    });
     Shiny.addCustomMessageHandler('dp_reset_search', function(msg) {
       var el = document.getElementById('dp_search');
       if (el) { el.value = ''; Shiny.setInputValue('dp_search', ''); }
