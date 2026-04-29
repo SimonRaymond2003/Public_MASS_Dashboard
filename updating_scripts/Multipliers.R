@@ -38,16 +38,16 @@ subdomain_ioic <- tribble(
   "Architecture",                                          "BS541300",
   "Design",                                                "BS541400",
   "Design",                                                "BS541500",
-  "Books",                                                 "BS5111A0",
-  "Periodicals",                                           "BS5111A0",
-  "Newspapers",                                            "BS511110",
+  "Books",                                                 "BS5131A0",
+  "Periodicals",                                           "BS5131A0",
+  "Newspapers",                                            "BS513110",
   "Newspapers",                                            "BS519000",
-  "Other published works",                                 "BS5111A0",
+  "Other published works",                                 "BS5131A0",
   "Multi sub-domain",                                      "BS323000",
   "Multi sub-domain",                                      "BS414000",
   "Multi sub-domain",                                      "BS419000",
   "Multi sub-domain",                                      "BS451000",
-  "Multi sub-domain",                                      "BS5111A0",
+  "Multi sub-domain",                                      "BS5131A0",
   "Multi sub-domain",                                      "BS541900",
   "Film and video",                                        "BS334A00",
   "Film and video",                                        "BS414000",
@@ -479,6 +479,20 @@ cat("Provincial split rows:", nrow(prov_splits), "\n")
 
 all_splits <- bind_rows(nat_splits, prov_splits) %>%
   arrange(year, geo, coverage, Domain)
+
+# Sanity check: zero indirect/induced almost always means a domain's IOIC codes
+# don't exist in the published multiplier table (e.g. NAICS reclassification).
+# Nunavut/territory rows can legitimately be zero due to StatCan suppression.
+zero_warn <- all_splits %>%
+  filter(gdp_indirect == 0 | gdp_induced == 0) %>%
+  distinct(Domain, geo) %>%
+  group_by(Domain) %>%
+  summarise(geos = paste(sort(unique(geo)), collapse = ", "),
+            n_geos = n(), .groups = "drop")
+if (nrow(zero_warn) > 0) {
+  message("WARN: domains with zero indirect/induced multipliers (check IOIC mapping vs current NAICS):")
+  print(zero_warn)
+}
 
 cat("\n=== ALL SPLITS:", nrow(all_splits), "rows ===\n")
 
