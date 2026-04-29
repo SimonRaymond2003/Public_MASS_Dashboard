@@ -226,12 +226,44 @@ NAVY <- "#1B1464"; PINK <- "#FF3EC9"; GREEN <- "#2D6A4F"
 CREAM <- "#FAF8F5"; WHITE <- "#FFFFFF"; GOLD <- "#D4A843"
 
 # Build custom code list dynamically from data:
-# CSA split codes first (codes only, no display name), then all StatCan published codes
-.split_codes   <- sort(unique(mult_combined$industry_code[grepl("_", mult_combined$industry_code)]))
-.statcan_codes <- sort(unique(mult_combined$industry_code[!grepl("_", mult_combined$industry_code)]))
+# CSA splits show their domain name; StatCan published codes show "CODE — Title".
+# domain_label is populated upstream by updating_scripts/Multipliers.R for both
+# row types; we fall back to the bare code if it's missing.
+.code_label_lookup <- mult_combined %>%
+  filter(!is.na(domain_label) & domain_label != "") %>%
+  distinct(industry_code, domain_label)
+.code_label_lookup <- setNames(.code_label_lookup$domain_label,
+                               .code_label_lookup$industry_code)
+
+.trunc_title <- function(s, n = 40) {
+  ifelse(nchar(s) > n, paste0(substr(s, 1, n - 1), "…"), s)
+}
+
+.lookup_title <- function(code) {
+  ttl <- unname(.code_label_lookup[code])
+  if (length(ttl) == 0 || is.na(ttl) || ttl == "") NA_character_ else ttl
+}
+
+# Drop blank/NA codes (e.g. StatCan "Total industries" aggregate row).
+# CSA splits use the "csa_" prefix; everything else is StatCan published.
+.all_codes     <- unique(mult_combined$industry_code)
+.all_codes     <- .all_codes[!is.na(.all_codes) & nzchar(.all_codes)]
+.split_codes   <- sort(.all_codes[grepl("^csa_", .all_codes)])
+.statcan_codes <- sort(.all_codes[!grepl("^csa_", .all_codes)])
+
+.split_labels <- vapply(.split_codes, function(c) {
+  ttl <- .lookup_title(c)
+  if (is.na(ttl)) c else paste0("CSA: ", ttl)
+}, character(1))
+
+.statcan_labels <- vapply(.statcan_codes, function(c) {
+  ttl <- .lookup_title(c)
+  if (is.na(ttl)) c else paste0(c, " — ", .trunc_title(ttl))
+}, character(1))
+
 CUSTOM_IND_CODES <- setNames(
   c(.split_codes, .statcan_codes),
-  c(.split_codes, .statcan_codes)
+  c(.split_labels, .statcan_labels)
 )
 
 mult_toggle_ui <- function(id, label_single = "Primary Multiplier", label_mix = "Equal-Weight Mixture") {

@@ -173,11 +173,13 @@ extract_mult <- function(mult_df, var_filter) {
   mult_df %>%
     filter(Variable == var_filter) %>%
     select(year = REF_DATE, code = `Classification Code for Industry`,
+           industry_name = Industry,
            type = `Multiplier type`, VALUE) %>%
     filter(type %in% c("Direct multiplier", "Indirect multiplier",
                        "Induced multiplier", "Simple multiplier",
                        "Total multiplier")) %>%
-    mutate(code = str_extract(code, "[A-Z0-9_]+"),
+    mutate(domain_label = str_trim(str_remove(industry_name, "^\\[[A-Z0-9_]+\\]\\s*")),
+           code = str_extract(code, "[A-Z0-9_]+"),
            year = as.character(year),
            type = case_when(
              type == "Direct multiplier"   ~ "direct",
@@ -186,6 +188,7 @@ extract_mult <- function(mult_df, var_filter) {
              type == "Simple multiplier"   ~ "simple",
              type == "Total multiplier"    ~ "total"
            )) %>%
+    select(-industry_name) %>%
     pivot_wider(names_from = type, values_from = VALUE)
 }
 
@@ -194,11 +197,13 @@ extract_prov_mult <- function(mult_df, var_filter) {
     filter(Variable == var_filter) %>%
     select(year = REF_DATE, geo = GEO, coverage = `Geographical coverage`,
            code = `Classification Code for Industry`,
+           industry_name = Industry,
            type = `Multiplier type`, VALUE) %>%
     filter(type %in% c("Direct multiplier", "Indirect multiplier",
                        "Induced multiplier", "Simple multiplier",
                        "Total multiplier")) %>%
-    mutate(code = str_extract(code, "[A-Z0-9_]+"),
+    mutate(domain_label = str_trim(str_remove(industry_name, "^\\[[A-Z0-9_]+\\]\\s*")),
+           code = str_extract(code, "[A-Z0-9_]+"),
            geo = as.character(geo),
            year = as.character(year),
            type = case_when(
@@ -208,6 +213,7 @@ extract_prov_mult <- function(mult_df, var_filter) {
              type == "Simple multiplier"   ~ "simple",
              type == "Total multiplier"    ~ "total"
            )) %>%
+    select(-industry_name) %>%
     pivot_wider(names_from = type, values_from = VALUE)
 }
 
@@ -291,10 +297,16 @@ csa <- get_cansim("36-10-0652-01")
 ptci <- get_cansim("36-10-0452-01")
 
 load_csa_nat <- function(csa_df, domains) {
+  # Some domains arrive as "X ==> Y" parent-child rows (e.g. Sound recording).
+  # Keep only "X ==> X" self-totals and collapse them to bare "X" so they
+  # match the labels in subdomain_ioic.
   csa_filt <- csa_df %>%
+    mutate(Domain = as.character(Domain)) %>%
+    filter(!grepl("==>", Domain) |
+           trimws(sub("==>.*$", "", Domain)) == trimws(sub("^.*==>", "", Domain))) %>%
+    mutate(Domain = trimws(sub("==>.*$", "", Domain))) %>%
     filter(Domain %in% domains) %>%
-    mutate(year = str_sub(as.character(REF_DATE), 1, 4),
-           Domain = as.character(Domain))
+    mutate(year = str_sub(as.character(REF_DATE), 1, 4))
   
   out <- csa_filt %>%
     filter(UOM == "Dollars", Indicators == "Output") %>%
@@ -322,11 +334,15 @@ load_csa_nat <- function(csa_df, domains) {
 csa_nat <- load_csa_nat(csa, all_domains)
 
 load_csa_prov <- function(ptci_df, domains) {
+  # Same "X ==> Y" handling as load_csa_nat — keep self-totals, drop cross-totals.
   ptci_filt <- ptci_df %>%
+    mutate(Domain = as.character(Domain)) %>%
+    filter(!grepl("==>", Domain) |
+           trimws(sub("==>.*$", "", Domain)) == trimws(sub("^.*==>", "", Domain))) %>%
+    mutate(Domain = trimws(sub("==>.*$", "", Domain))) %>%
     filter(Domain %in% domains) %>%
     mutate(year = as.character(REF_DATE),
-           geo = as.character(GEO),
-           Domain = as.character(Domain))
+           geo = as.character(GEO))
   
   out <- ptci_filt %>%
     filter(Indicators == "Output") %>%
@@ -523,8 +539,7 @@ prov_published <- pub_gdp %>%
             by = c("year", "geo", "coverage", "Industry")) %>%
   filter(nzchar(Industry)) %>%          # drop rows with blank industry code
   mutate(source = "StatCan published",
-         industry_code = Industry,
-         domain_label = NA_character_) %>%
+         industry_code = Industry) %>%
   select(year, geo, coverage, industry_code, domain_label,
          gdp_direct, gdp_indirect, gdp_induced, gdp_simple, gdp_total,
          jobs_direct, jobs_indirect, jobs_induced, jobs_simple, jobs_total,
