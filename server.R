@@ -1089,6 +1089,9 @@ server <- function(input, output, session) {
   outputOptions(output, "port_custom_weights_ui",    suspendWhenHidden = FALSE)
   outputOptions(output, "bulk_weight_ui",            suspendWhenHidden = FALSE)
   outputOptions(output, "bulk_custom_weights_ui",    suspendWhenHidden = FALSE)
+  outputOptions(output, "bulk_total_ui",             suspendWhenHidden = FALSE)
+  outputOptions(output, "bulk_disc_panel",           suspendWhenHidden = FALSE)
+  outputOptions(output, "bulk_cat_panel",            suspendWhenHidden = FALSE)
   
   # Aggregate KPIs — current
   output$port_gdp_total <- renderText(paste0("$", comma(round(sum(port_orgs()$gdp_t, na.rm = TRUE)))))
