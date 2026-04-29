@@ -365,7 +365,9 @@ ui <- page_fluid(
     term("Indirect GDP", "Indirect GDP"), ", and ", term("Induced GDP", "Induced GDP"),
     ". Together they capture the full value added across the economy. Jobs counts all positions supported across all impact layers. ",
     "Use the toggles to switch between ", term("Expenditures", "Expenditures"), " and ", term("Revenue", "Revenue"),
-    " as the calculation base, or between a single industry ", term("Multiplier"), " (", term("Primary", "Primary"), ") and an equal-weight blend (", term("Mixture", "Mixture"), ")."),
+    " as the calculation base, or between a single industry ", term("Multiplier"), " (", term("Primary", "Primary"), ") and an equal-weight blend (", term("Mixture", "Mixture"), "). ",
+    term("Primary", "Primary"), " reflects how many orgs fall under that single industry label, but we recommend the ", term("Mixture", "Mixture"), " since most arts and culture orgs straddle a few industries at once. ",
+    term("Expenditures", "Expenditures"), " are generally preferred over ", term("Revenue", "Revenue"), " as the calculation base."),
   # Toggle row for summary stats
   div(style = "display:flex; gap:16px; margin-bottom:14px;",
       div(class = "sec-toggle-wrap",
@@ -446,7 +448,11 @@ ui <- page_fluid(
       " by industry-specific multipliers to estimate ", term("Direct GDP", "Direct GDP"), ", ",
       term("Indirect GDP", "Indirect GDP"), ", and ", term("Induced GDP", "Induced GDP"),
       ". Because the ", term("I-O Model", "I-O Model"),
-      " is linear, multipliers can be blended across industries (", term("Mixture", "Mixture"), ") to reflect organizations that span multiple sectors."),
+      " is linear, multipliers can be blended across industries (", term("Mixture", "Mixture"), ") to reflect organizations that span multiple sectors. ",
+      term("Primary", "Primary"), " uses the single industry label most orgs fall under, ", term("Mixture", "Mixture"),
+      " blends a few. We recommend the ", term("Mixture", "Mixture"), " for most orgs, and ", tags$strong("Custom"),
+      " is there if you really want to dial in your own multipliers. ",
+      term("Expenditures", "Expenditures"), " are generally preferred over ", term("Revenue", "Revenue"), " as the calculation base."),
 
     tags$script(HTML("
       function setMultMethod(prefix, m) {
