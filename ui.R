@@ -369,7 +369,7 @@ ui <- page_fluid(
     "This section shows the economic impact of ", tags$strong(style = "font-weight:700; color:#1a1a2e;", "non-profit"), " arts and culture organizations in the filtered selection. ",
     term("Total GDP", "Total GDP"), " is broken into ", term("Direct GDP", "Direct GDP"), ", ",
     term("Indirect GDP", "Indirect GDP"), ", and ", term("Induced GDP", "Induced GDP"),
-    ". Together they capture the full value added across the economy. Jobs counts all positions supported across all impact layers. ",
+    ". Together they capture the full value added across the economy. ", term("Jobs"), " counts all positions supported across all impact layers. ",
     "Use the toggles to switch between ", term("Expenditures", "Expenditures"), " and ", term("Revenue", "Revenue"),
     " as the calculation base, or between a single industry ", term("Multiplier"), " (", term("Primary", "Primary"), ") and an equal-weight blend (", term("Mixture", "Mixture"), "). ",
     term("Primary", "Primary"), " reflects how many orgs fall under that single industry label, but we recommend the ", term("Mixture", "Mixture"), " since most arts and culture orgs straddle a few industries at once. ",
@@ -395,7 +395,7 @@ ui <- page_fluid(
            column(6, div(style = "height:100%;", uiOutput("kpi_panel_finance")))),
   fluidRow(
     column(6, div(class = "chart-card", h4(strong(term("GDP"), " impact"), " over time (all years)"), plotlyOutput("plot_gdp_year", height = "320px"))),
-    column(6, div(class = "chart-card", h4(strong("Jobs supported"), " over time (all years)"), plotlyOutput("plot_jobs_year", height = "320px")))),
+    column(6, div(class = "chart-card", h4(strong(term("Jobs"), " supported"), " over time (all years)"), plotlyOutput("plot_jobs_year", height = "320px")))),
   
   # ── PROVINCIAL IMPACT ───────────────────────────────────────────────────────
   div(class = "sec-title", span(class = "highlight", "Provincial"), " Impact & ", term("Leakage")),
@@ -465,6 +465,10 @@ ui <- page_fluid(
         var ids = {single: prefix+'_method_single_btn', mixture: prefix+'_method_mix_btn', custom: prefix+'_method_custom_btn'};
         Object.keys(ids).forEach(function(k){ document.getElementById(ids[k]).className = k===m ? 'sec-active' : ''; });
         Shiny.setInputValue(prefix+'_mult_method', m, {priority:'event'});
+        if (prefix === 'port') {
+          var w = document.getElementById('port_cat_disc_wrap');
+          if (w) w.style.display = (m === 'custom') ? 'none' : '';
+        }
       }
       function resetMultMethod() { setMultMethod('port', 'single'); setMultMethod('bulk', 'single'); }
       var cwSnap = {};
@@ -543,12 +547,13 @@ ui <- page_fluid(
                     tags$input(id = "port_name", type = "text", value = "", placeholder = "e.g. My Theatre Co",
                                style = "width:100%; padding:7px 10px; border:1px solid #ddd; border-radius:8px; font-size:0.82rem; background:white; box-sizing:border-box;",
                                onchange = "Shiny.setInputValue('port_name', this.value)")),
-                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Organization Type"),
-                    selectInput("port_cat", NULL, choices = CALC_CATEGORIES, selected = "Arts Organization", width = "100%")),
-                div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Discipline"),
-                    selectInput("port_disc", NULL,
-                                choices = VALID_COMBOS_FULL %>% filter(Category == "Arts Organization") %>% pull(Discipline) %>% sort(),
-                                selected = "Performing Arts", width = "100%")),
+                div(id = "port_cat_disc_wrap", style = "display:flex; flex-direction:column; gap:10px;",
+                    div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Organization Type"),
+                        selectInput("port_cat", NULL, choices = CALC_CATEGORIES, selected = "Arts Organization", width = "100%")),
+                    div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Discipline"),
+                        selectInput("port_disc", NULL,
+                                    choices = VALID_COMBOS_FULL %>% filter(Category == "Arts Organization") %>% pull(Discipline) %>% sort(),
+                                    selected = "Performing Arts", width = "100%"))),
                 div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Province"),
                     selectInput("port_prov", NULL, choices = PROVINCES, selected = "ON", width = "100%")),
                 div(tags$label(style = "font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:#888; display:block; margin-bottom:4px;", "Year"),
@@ -589,7 +594,7 @@ ui <- page_fluid(
             div(style = "font-size:0.65rem; font-weight:800; text-transform:uppercase; color:#aaa; margin-bottom:6px; letter-spacing:0.5px;",
                 "Step 2 — Composition"),
             div(style = "font-size:0.7rem; color:#777; margin-bottom:8px; line-height:1.4;",
-                "Allocate the total across disciplines AND across org types — each side must sum to the total. The two sides combine 50/50 in the multiplier."),
+                "Allocate the total across disciplines AND across org types. Each side must sum to the total."),
             div(style = "display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;",
                 div(style = "background:#f8f7f4; border-radius:8px; padding:10px;",
                     div(style = "font-size:0.68rem; font-weight:800; color:#888; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px;", "Disciplines"),
@@ -682,9 +687,9 @@ ui <- page_fluid(
                              hr(class = "dna-divider"),
                              uiOutput("port_gdp_leakage")),
                          div(class = "chart-card", style = sprintf("border-top:3px solid %s; flex:1;", PINK),
-                             div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:8px;", "Portfolio Jobs Supported"),
+                             div(style = "font-size:0.68rem; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#aaa; margin-bottom:8px;", "Portfolio ", term("Jobs"), " Supported"),
                              div(style = sprintf("font-size:1.8rem; font-weight:800; color:%s; line-height:1;", NAVY), textOutput("port_jobs_total", inline = TRUE)),
-                             div(style = "font-size:0.72rem; color:#aaa; margin-bottom:10px;", "total jobs"),
+                             div(style = "font-size:0.72rem; color:#aaa; margin-bottom:10px;", "total ", term("Jobs")),
                              uiOutput("port_jobs_breakdown"),
                              hr(class = "dna-divider"),
                              uiOutput("port_jobs_leakage")),
