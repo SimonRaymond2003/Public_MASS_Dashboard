@@ -1,74 +1,67 @@
 # ══════════════════════════════════════════════════════════════════════════════
-# Map each business record to a Census Division via spatial join
-# Uses Latitude/Longitude from the MASS data directly.
-# Also dissolves the CSD shapefile into CD polygons and saves cd_sf.rds.
+# Map each business record to a Census Division and build CD polygons.
+# CD assignment is taken directly from charity_ident (no spatial join needed).
 #
 # Outputs:
 #   updating_data/business_cd_lookup.csv   — Business Number + Year → CDUID
-#   non-updating_data/cd_sf.rds            — CD polygons (dissolved from CSDs)
+#   non-updating_data/cd_sf.rds            — CD polygons
 # ══════════════════════════════════════════════════════════════════════════════
 
 library(sf)
 library(dplyr)
-library(readxl)
 
-# ── 1. Build CD polygons from CSD shapefile ──────────────────────────────────
-cat("Loading CSD shapefile...\n")
-csd_sf <- st_read("non-updating_data/lcsd000a25a_e.shp", quiet = TRUE)
+# ── 1. Build CD polygons from CD shapefile ───────────────────────────────────
+# Shapefile only ships PRUID, so map it to the English PRNAME used elsewhere.
+prname_by_pruid <- c(
+  "10" = "Newfoundland and Labrador", "11" = "Prince Edward Island",
+  "12" = "Nova Scotia",               "13" = "New Brunswick",
+  "24" = "Quebec",                    "35" = "Ontario",
+  "46" = "Manitoba",                  "47" = "Saskatchewan",
+  "48" = "Alberta",                   "59" = "British Columbia",
+  "60" = "Yukon",                     "61" = "Northwest Territories",
+  "62" = "Nunavut"
+)
 
-cat("Dissolving CSDs into Census Divisions...\n")
-cd_sf <- csd_sf %>%
-  group_by(CDUID, CDNAME, PRUID, PRNAME) %>%
-  summarise(geometry = st_union(geometry), .groups = "drop") %>%
-  # Strip bilingual province names to English only
-  mutate(PRNAME = sub(" / .*$", "", PRNAME))
+cat("Loading CD shapefile...\n")
+cd_sf <- st_read("non-updating_data/lcd_000a21a_e.shp", quiet = TRUE) %>%
+  mutate(PRNAME = unname(prname_by_pruid[as.character(PRUID)])) %>%
+  select(CDUID, CDNAME, PRUID, PRNAME, geometry)
 
 cat("Census Divisions:", nrow(cd_sf), "\n")
-
-# Save for app use
 saveRDS(cd_sf, "non-updating_data/cd_sf.rds")
 cat("Saved non-updating_data/cd_sf.rds\n\n")
 
 # ── 2. Load MASS business data ───────────────────────────────────────────────
+# Reads charity_ident from the new normalized data. Matches the toggle in global.R.
 cat("Loading MASS data...\n")
-data_file <- list.files("MASS_data", pattern = "\\.xlsx$", full.names = TRUE)[1]
-mass_raw <- read_excel(data_file)
+USE_REAL_DOLLARS <- FALSE
+data_file <- if (USE_REAL_DOLLARS)
+  "mass-culture-dashboard-data/df_flagged_value_na_real_dollars.rda" else
+  "mass-culture-dashboard-data/df_flagged_value_na.rda"
+loaded_obj <- load(data_file)
+mass_data <- get(loaded_obj)
 
-# Keep only rows with valid coordinates
-biz <- mass_raw %>%
-  select(`Business Number`, Year, Latitude, Longitude) %>%
-  filter(!is.na(Latitude), !is.na(Longitude))
+# ── 3. Build lookup directly from charity_ident's CD columns ─────────────────
+# charity_ident already carries Census Division ID/Name per (Business Number, Year);
+# attach PRNAME from the shapefile so the lookup matches the previous schema.
+prname_lookup <- cd_sf %>% st_drop_geometry() %>% select(CDUID, PRNAME)
 
-cat("Business records with coordinates:", nrow(biz), "/", nrow(mass_raw), "\n")
+lookup <- mass_data$charity_ident %>%
+  select(`Business Number`, Year,
+         CDUID  = `Census Division ID`,
+         CDNAME = `Census Division Name`) %>%
+  filter(!is.na(CDUID)) %>%
+  left_join(prname_lookup, by = "CDUID")
 
-# ── 3. Spatial join: business points → CD polygons ──────────────────────────
-cat("Converting to spatial points (WGS84)...\n")
-biz_sf <- st_as_sf(biz, coords = c("Longitude", "Latitude"), crs = 4326)
+n_total   <- nrow(mass_data$charity_ident)
+n_kept    <- nrow(lookup)
+n_missing <- n_total - n_kept
+if (n_missing > 0)
+  cat("Note:", n_missing, "of", n_total,
+      "charity_ident rows had no Census Division ID and were dropped.\n")
 
-# Transform to match CSD shapefile projection
-biz_sf <- st_transform(biz_sf, st_crs(cd_sf))
-
-cat("Running spatial join...\n")
-joined <- st_join(biz_sf, cd_sf[, c("CDUID", "CDNAME", "PRNAME")], join = st_within)
-
-# ── 4. Handle unmatched records ──────────────────────────────────────────────
-n_missing <- sum(is.na(joined$CDUID))
-if (n_missing > 0) {
-  cat("WARNING:", n_missing, "records did not fall within a CD polygon.",
-      "Trying nearest feature fallback...\n")
-  missing_idx <- which(is.na(joined$CDUID))
-  nearest <- st_nearest_feature(biz_sf[missing_idx, ], cd_sf)
-  joined$CDUID[missing_idx]  <- cd_sf$CDUID[nearest]
-  joined$CDNAME[missing_idx] <- cd_sf$CDNAME[nearest]
-  joined$PRNAME[missing_idx] <- cd_sf$PRNAME[nearest]
-  cat("After fallback, unmatched:", sum(is.na(joined$CDUID)), "\n")
-}
-
-# ── 5. Save lookup ───────────────────────────────────────────────────────────
-lookup <- joined %>%
-  st_drop_geometry() %>%
-  select(`Business Number`, Year, CDUID, CDNAME, PRNAME)
-
+# ── 4. Save lookup ───────────────────────────────────────────────────────────
+lookup <- lookup %>% select(`Business Number`, Year, CDUID, CDNAME, PRNAME)
 write.csv(lookup, "updating_data/business_cd_lookup.csv", row.names = FALSE)
 
 cat("\nSaved updating_data/business_cd_lookup.csv —", nrow(lookup), "rows\n")

@@ -14,10 +14,39 @@ library(leaflet)
 # 1. LOAD DATA
 # ══════════════════════════════════════════════════════════════════════════════
 
-org_data <- read_excel("MASS_data/SIMON - 2025-10-24-MASS-Culture-Data-Summary-Real_Dollars.xlsx")
-org_data$`Revenue Range` <- NULL
-org_data$`Top Compensation Category` <- NULL
-org_data$`Compensation Category Counts` <- NULL
+# ── Source data toggle ──────────────────────────────────────────────────────
+# FALSE = nominal dollars (default), TRUE = inflation-adjusted (real dollars).
+# Both files have identical schema; only one variable to flip.
+USE_REAL_DOLLARS <- FALSE
+data_file <- if (USE_REAL_DOLLARS)
+  "mass-culture-dashboard-data/df_flagged_value_na_real_dollars.rda" else
+  "mass-culture-dashboard-data/df_flagged_value_na.rda"
+
+loaded_obj <- load(data_file)
+mass_data <- get(loaded_obj)
+rm(list = loaded_obj, envir = environment())
+
+# Assemble wide org_data from normalized sub-tables.
+ident <- mass_data$charity_ident %>%
+  select(`Business Number`, Year, `Legal Name`, City, Province,
+         Latitude = LATITUDE, Longitude = LONGITUDE,
+         adp_category, adp_sub_category) %>%
+  rename(Category = adp_category, Discipline = adp_sub_category)
+
+rev_tbl <- mass_data$revenue_data %>%
+  rename(`Total Government Revenue` = total_gov,
+         `Government Funding Ratio` = gov_funding_ratio) %>%
+  select(-`Fiscal Period End`)
+
+exp_tbl <- mass_data$expenditure_data
+staff_tbl <- mass_data$staff_counts_payroll %>% select(-`Fiscal Period End`)
+fp_tbl <- mass_data$fiscal_period %>% select(`Business Number`, Year, `Fiscal Period End`)
+
+org_data <- ident %>%
+  left_join(rev_tbl,   by = c("Business Number", "Year")) %>%
+  left_join(exp_tbl,   by = c("Business Number", "Year")) %>%
+  left_join(staff_tbl, by = c("Business Number", "Year")) %>%
+  left_join(fp_tbl,    by = c("Business Number", "Year"))
 
 mult_dt <- fread("updating_data/provincial_multipliers_with_csa_splits.csv.gz")
 DISC_CODE <- fread("non-updating_data/discipline_multipliers.csv") %>%
