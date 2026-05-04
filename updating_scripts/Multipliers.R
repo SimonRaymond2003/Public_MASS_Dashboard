@@ -81,7 +81,56 @@ subdomain_ioic <- tribble(
   "Multi domain",                                          "BS561A00",
   "Organized sport",                                       "BS71A000",
   "Organized sport",                                       "BS813000",
-  "Informal sport",                                        "BS713A00"
+  "Informal sport",                                        "BS713A00",
+
+  # === Parent domains: union of children's IOIC codes from StatCan CSA Table 1 ===
+  # (parents are header rows in StatCan; their published GDP/Output/Jobs values
+  #  use the same constituent IOICs as their children, deduplicated)
+
+  "Heritage and libraries",                                "BS519000",
+  "Heritage and libraries",                                "BS71A000",
+  "Heritage and libraries",                                "NP710000",
+  "Heritage and libraries",                                "NP999999",
+
+  "Live performance",                                      "BS71A000",
+  "Live performance",                                      "NP710000",
+
+  "Visual and applied arts",                               "BS323000",
+  "Visual and applied arts",                               "BS332A00",
+  "Visual and applied arts",                               "BS339900",
+  "Visual and applied arts",                               "BS414000",
+  "Visual and applied arts",                               "BS416000",
+  "Visual and applied arts",                               "BS418000",
+  "Visual and applied arts",                               "BS442000",
+  "Visual and applied arts",                               "BS448000",
+  "Visual and applied arts",                               "BS453000",
+  "Visual and applied arts",                               "BS519000",
+  "Visual and applied arts",                               "BS541300",
+  "Visual and applied arts",                               "BS541400",
+  "Visual and applied arts",                               "BS541500",
+  "Visual and applied arts",                               "BS541800",
+  "Visual and applied arts",                               "BS541900",
+  "Visual and applied arts",                               "BS71A000",
+  "Visual and applied arts",                               "BS812A00",
+  "Visual and applied arts",                               "NP710000",
+  "Visual and applied arts",                               "NP999999",
+
+  "Written and published works",                           "BS5111A0",
+  "Written and published works",                           "BS511110",
+  "Written and published works",                           "BS519000",
+  "Written and published works",                           "NP999999",
+
+  "Audio-visual and interactive media",                    "BS334A00",
+  "Audio-visual and interactive media",                    "BS414000",
+  "Audio-visual and interactive media",                    "BS451000",
+  "Audio-visual and interactive media",                    "BS511200",
+  "Audio-visual and interactive media",                    "BS512130",
+  "Audio-visual and interactive media",                    "BS5121A0",
+  "Audio-visual and interactive media",                    "BS515100",
+  "Audio-visual and interactive media",                    "BS515200",
+  "Audio-visual and interactive media",                    "BS517000",
+  "Audio-visual and interactive media",                    "BS532A00",
+  "Audio-visual and interactive media",                    "NP999999"
 )
 
 all_domains <- unique(subdomain_ioic$csa_domain)

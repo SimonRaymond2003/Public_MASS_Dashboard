@@ -1,16 +1,16 @@
-"Discipline","ind_primary"
-"Arts Council","csa_Governance_funding_and_professional_support_culture"
-"Arts Service Organization","csa_Governance_funding_and_professional_support_culture"
-"Broadcasting","csa_Broadcasting"
-"Community Arts","csa_Performing_arts"
-"Crafts","csa_Crafts"
-"Cultural","csa_Culture_heritage"
-"Dance","csa_Performing_arts"
-"Film","csa_Film_and_video"
-"Literary","csa_Books"
-"Media Arts","csa_Interactive_media"
-"Multidisciplinary","csa_Multi_domain"
-"Museum","csa_Culture_heritage"
-"Music & Sound","csa_Sound_recording"
-"Performing Arts","csa_Performing_arts"
-"Visual Arts","csa_Original_visual_art"
+Discipline,ind_primary
+Arts Council,csa_Governance_funding_and_professional_support_culture
+Arts Service Organization,csa_Governance_funding_and_professional_support_culture
+Broadcasting,csa_Broadcasting
+Community Arts,csa_Performing_arts
+Crafts,csa_Crafts
+Cultural,csa_Culture_heritage
+Dance,csa_Performing_arts
+Film,csa_Film_and_video
+Literary,csa_Written_and_published_works
+Media Arts,csa_Audio_visual_and_interactive_media
+Multidisciplinary,csa_Multi_domain
+Museum,csa_Culture_heritage
+Music & Sound,csa_Sound_recording
+Performing Arts,csa_Performing_arts
+Visual Arts,csa_Original_visual_art
