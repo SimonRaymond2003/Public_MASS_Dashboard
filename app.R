@@ -11,12 +11,7 @@ shinyApp(ui, server)
 
 # to do
 
-# explain jobs direct vs ind/induced etc 
-# need to be able to clear the multipliers cleaner
-
-# make it work off of their base exp/rev data
-
-# fix the books csa 0 ind and induced and double check for others like these
+# NA
 
 # General Notes
 

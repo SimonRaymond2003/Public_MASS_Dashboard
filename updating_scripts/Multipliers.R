@@ -1,3 +1,5 @@
+dir.create("updating_data", showWarnings = FALSE, recursive = TRUE)
+
 library(dplyr)
 library(tidyr)
 library(readr)

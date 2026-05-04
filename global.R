@@ -173,21 +173,26 @@ get_mult_row_weighted <- function(prov, yr, ind_vec, weights, mdf = mult_combine
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 6. PRE-COMPUTE MULTIPLIERS
+# 6. PRE-COMPUTE MULTIPLIERS  (loaded from baked rds — see Build_app_data.R)
 # ══════════════════════════════════════════════════════════════════════════════
 
-combos_scalar <- org_data %>% distinct(Province, Year, ind_primary)
-ind_all_lookup <- org_data %>% select(ind_primary, ind_all) %>% group_by(ind_primary) %>% slice(1) %>% ungroup()
-combos <- combos_scalar %>% left_join(ind_all_lookup, by = "ind_primary")
+app_data_file <- if (USE_REAL_DOLLARS)
+  "updating_data/app_data_real.rds" else
+  "updating_data/app_data_nominal.rds"
+.app_data <- readRDS(app_data_file)
+combos_single       <- .app_data$combos_single
+combos_mixture      <- .app_data$combos_mixture
+org_data_exp        <- .app_data$org_data_exp
+org_data_rev        <- .app_data$org_data_rev
+org_data_single_exp  <- .app_data$org_data_single_exp
+org_data_mixture_exp <- .app_data$org_data_mixture_exp
+org_data_single_rev  <- .app_data$org_data_single_rev
+org_data_mixture_rev <- .app_data$org_data_mixture_rev
+org_data_single  <- org_data_single_exp
+org_data_mixture <- org_data_mixture_exp
+rm(.app_data)
 
-combos_single <- combos %>% rowwise() %>% mutate(m = list(get_mult_row(Province, Year, ind_primary))) %>% ungroup()
-for (col in MULT_COLS) combos_single[[col]] <- sapply(combos_single$m, function(x) if(col %in% names(x)) x[[col]][1] else 0)
-combos_single$m <- NULL
-
-combos_mixture <- combos %>% rowwise() %>% mutate(m = list(get_mult_row_mixture(Province, Year, ind_all))) %>% ungroup()
-for (col in MULT_COLS) combos_mixture[[col]] <- sapply(combos_mixture$m, function(x) if(col %in% names(x)) x[[col]][1] else 0)
-combos_mixture$m <- NULL
-
+# attach_impacts kept for any runtime callers that need it.
 attach_impacts <- function(org_df, combos_df, base_col = "Total Expenditures") {
   lookup <- combos_df %>% select(-any_of("ind_all")) %>% distinct(Province, Year, ind_primary, .keep_all = TRUE)
   org_df %>%
@@ -201,15 +206,6 @@ attach_impacts <- function(org_df, combos_df, base_col = "Total Expenditures") {
            imp_jobs_induced = base_millions * jobs_induced, imp_jobs_total = base_millions * jobs_total,
            imp_jobs_wp_total = base_millions * jobs_wp_total)
 }
-
-org_data_exp <- org_data %>% filter(!is.na(`Total Expenditures`), `Total Expenditures` > 0)
-org_data_rev <- org_data %>% filter(!is.na(`Total Revenue`), `Total Revenue` > 0)
-org_data_single_exp  <- attach_impacts(org_data_exp, combos_single, "Total Expenditures")
-org_data_mixture_exp <- attach_impacts(org_data_exp, combos_mixture, "Total Expenditures")
-org_data_single_rev  <- attach_impacts(org_data_rev, combos_single, "Total Revenue")
-org_data_mixture_rev <- attach_impacts(org_data_rev, combos_mixture, "Total Revenue")
-org_data_single  <- org_data_single_exp
-org_data_mixture <- org_data_mixture_exp
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 7. MAP PREP

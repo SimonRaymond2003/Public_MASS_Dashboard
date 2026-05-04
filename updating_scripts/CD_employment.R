@@ -5,6 +5,8 @@
 # Output: updating_data/cd_overall_shares.csv
 # ══════════════════════════════════════════════════════════════════════════════
 
+dir.create("updating_data", showWarnings = FALSE, recursive = TRUE)
+
 library(cancensus)
 library(dplyr)
 

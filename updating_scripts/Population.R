@@ -2,6 +2,8 @@
 # Fetches provincial population estimates from Statistics Canada table 17-10-0005-01
 # and saves the result to data/1710000501_databaseLoadingData.csv
 
+dir.create("updating_data", showWarnings = FALSE, recursive = TRUE)
+
 library(cansim)
 library(data.table)
 

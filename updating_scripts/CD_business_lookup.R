@@ -7,6 +7,9 @@
 #   non-updating_data/cd_sf.rds            — CD polygons
 # ══════════════════════════════════════════════════════════════════════════════
 
+dir.create("updating_data", showWarnings = FALSE, recursive = TRUE)
+dir.create("non-updating_data", showWarnings = FALSE, recursive = TRUE)
+
 library(sf)
 library(dplyr)
 
